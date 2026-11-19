@@ -1,0 +1,54 @@
+# Secrets and local environment. Never commit real credentials.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# Personal financial records, exports, and database dumps.
+*.csv
+*.xls
+*.xlsx
+backups/
+dumps/
+*.dump
+*.sql
+*.psql
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+.venv/
+venv/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Docker local data
+pgdata/
+
+# Logs and OS / editor
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.swp
