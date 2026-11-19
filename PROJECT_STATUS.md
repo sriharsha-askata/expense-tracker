@@ -1,65 +1,64 @@
 # Project Status
 
-Last updated: 2026-11-19 (IST) · Updated by: DEV · Phase: **1–2, discovery and architecture, revised**
-
-This file is the shared working memory. The first status in this branch described a server. That plan is withdrawn.
+Last updated: 2026-11-19 (IST) · Updated by: DEV · Phase: **1–2, decisions recorded, waiting for a Phase 3 go-ahead**
 
 ## Snapshot
 
 | Item | State |
 |---|---|
 | Product docs (`docs/product/`) | Unchanged, on purpose. They still describe a web server. The PM will revise them. |
-| Product Owner direction | Recorded in the addendum of `docs/discussions/001-mvp-discovery.md`. Local-first Android, SQLite, GitHub sync, no server, no household sharing. |
-| Architecture | Revised and **Proposed**. Server ADRs are marked Superseded. |
-| Application code | None. |
+| Product Owner decisions | Recorded in the addenda of `docs/discussions/001-mvp-discovery.md`. The questions from the last two rounds are answered. |
+| Architecture | Expo / React Native, on-device SQLite, optional GitHub sync. ADRs the Product Owner decided are marked **Accepted**. ADR-014 (one snapshot file) is still **Proposed**. |
+| Application code | None. No Expo project, no workflow file. |
 | GitHub issues | Not created. |
-| CI | No workflow. Nothing has run. |
+| CI | Designed in ADR-018. Not configured, because there is nothing to test yet. |
 | Tests | None exist. None were run. |
-| Server runtime | Withdrawn. `docker-compose.yml` removed. It was never executed. |
+| Installable build | Not produced. EAS has not been run. No Expo token is stored here. |
 
 ## Phase gate
 
-Do not start implementation until:
+Phase 3 does not start until the Product Owner says it may start. The design questions he was asked are closed. Starting now would still be ahead of that word.
 
-1. The Product Owner answers NQ-1 through NQ-6 in the discovery addendum, or explicitly defers each to the recommendation written there.
-2. The PM updates `docs/product/` so the acceptance tests match a local-first app. Implementing the current email-and-server tests would rebuild the rejected design.
-3. The Product Owner accepts this revision of the architecture.
+When he says start:
 
-## Decisions in force (proposed mechanisms)
+1. Foundation first: Expo project, money and merge tests, GitHub Actions, then an on-demand EAS APK.
+2. Do not implement the server-shaped acceptance tests still sitting in `docs/product/`.
+3. Treat ADR-014 as accepted unless he rejects the one-snapshot layout in the same breath.
 
-- Kotlin Android app. SQLite is the ledger. Saves do not wait for the network.
-- Integer paise, `YYYY-MM-DD` dates, default timezone `Asia/Kolkata`.
-- One encrypted snapshot per sync to a private repo the user owns. Git does not merge the ciphertext.
-- Passphrase wraps a random data key. Recovery code shown once. No reset. Lost secrets mean lost data.
-- Tombstones for 30 days. Erasure of Git history is a confirmed squash plus a new data key.
-- Budget states: `ok`, `approaching`, `at_limit`, `exceeded`.
-- AI is optional and undecided.
+## Decisions in force
+
+- Expo, React Native, TypeScript. Android first. iOS later is the same project, not a Kotlin rewrite.
+- SQLite on the phone. Saves do not wait for the network. GitHub is optional.
+- Integer paise as `bigint`. No JavaScript `number` for money. Dates are `YYYY-MM-DD`. Default timezone `Asia/Kolkata`.
+- Dashboard headline is **Net**. Calendar year by default, plus an Indian FY preset. Past budget months are locked.
+- Refunds reduce the expense category. Card/EMI warning does not block. CSV has a UTF-8 BOM. Repeat is a new entry dated today. Passphrase failures back off and do not hard-lock.
+- No passphrase reset. One-time recovery code. Lost secrets mean the encrypted copy is gone.
+- Tombstones for 30 days. Forgetting history is a confirmed data-branch squash plus a new data key. Deleting the repo wipes the account. GitHub may keep copies.
+- AI is out of the first build.
+- Tests: GitHub Actions, Node only, every pull request. APK: EAS internal distribution, on demand, not every push. Free tier is 15 Android builds a month (published figure, 2026-11-19).
 
 ## Waiting on people
 
-**Product Owner:** NQ-1 (iOS in v1?), NQ-2 (GitHub account required only for sync?), NQ-3 (no passphrase reset), NQ-4 (squash plus key rotation), NQ-5 (analyst items), NQ-6 (AI stays out of the first build). Also still open from the first review: TQ-5 (the word savings), TQ-6 (past budgets), PO-Q6 (financial year).
+**Product Owner:** the go-ahead to start Phase 3, and later an Expo account plus an `EXPO_TOKEN` GitHub secret when the first APK is wanted. Not before.
 
-**PM:** Revise the PRD, stories, acceptance criteria, and roadmap so they stop requiring a server. Reply on the analyst items if you want a recommendation recorded before the Product Owner does. The word "savings" is still unresolved.
-
-## Analyst items (Proposed, not confirmed)
-
-Refunds reduce the expense category. A non-blocking warning about double-counting card bills and EMIs. CSV UTF-8 BOM. Repeat creates a new entry dated today. No hard lockout.
+**PM:** revise `docs/product/` so stories and acceptance tests match this app. That should land before feature work, not before the Expo shell.
 
 ## Not done, and not claimed
 
-- No phone build, no GitHub App registration, no encryption prototype, no merge tests.
-- GitHub's rate-limit numbers were checked against GitHub's public docs while revising this design. No request was sent to the GitHub API from this environment.
+- No phone build, no EAS build, no Expo account created by this agent.
+- No GitHub Actions run. The workflow file is intentionally absent.
+- Pricing and internal-distribution behaviour were read from Expo's public docs. They were not exercised.
 - License still unchosen.
 
 ## Next action
 
-Wait for the Product Owner on NQ-1 through NQ-6 and for the PM's product-doc revision. Do not open implementation issues from the old server backlog.
+Wait for the Product Owner to approve starting Phase 3. Do not open implementation issues and do not add a workflow that would show a green check over an empty project.
 
 ## Verification log
 
 | Check | Result |
 |---|---|
-| `docs/product/` and `docs/discussions/PM_PROPOSAL.md` | Unchanged in this revision. Confirmed with `git diff` before commit: no changes in those paths. |
+| `docs/product/` and `docs/discussions/PM_PROPOSAL.md` | Must stay unchanged in this commit. Confirm with `git diff` before committing. |
 | Application tests | Not run. There is no application. |
-| Docker | The compose file was removed. Docker was not installed here, and the old file had never been started. |
+| EAS / Expo | Not called. |
 | GitHub issue creation | Not done. |

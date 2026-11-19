@@ -1,8 +1,8 @@
 # ADR-017: Tombstones, 30-day restore, and Git history
 
-Status: **Proposed**
+Status: **Accepted**
 Date: 2026-11-19
-Decider: DEV
+Decider: Product Owner, adopting the proposal in the decision section below.
 Supersedes: ADR-009
 
 ## Context

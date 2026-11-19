@@ -1,13 +1,13 @@
 # ADR-016: GitHub authentication and sync transport
 
-Status: **Proposed**
+Status: **Accepted**
 Date: 2026-11-19
-Decider: DEV
+Decider: Product Owner for "GitHub is optional; the app is fully usable on one phone with CSV and no GitHub account." DEV for device flow, scopes, and batching.
 Supersedes: ADR-004 (sessions), ADR-006 (hosting)
 
 ## Context
 
-Each user connects a GitHub account they already have. The app syncs to a private repository that user owns. We do not receive the token and we do not run a server that could. The token lives in the Android Keystore. Scopes stay as small as GitHub allows. Sync has to survive GitHub's rate limits, including the content-creation guidance (on the order of 80 content-generating requests per minute and 500 per hour, plus a primary budget of 5,000 REST requests per hour for a normal authenticated user). Those numbers are GitHub's published limits as of this writing and they can change.
+Each user connects a GitHub account they already have. The app syncs to a private repository that user owns. We do not receive the token and we do not run a server that could. The token lives in `expo-secure-store`. GitHub is not required to use the app. Scopes stay as small as GitHub allows. Sync has to survive GitHub's rate limits, including the content-creation guidance (on the order of 80 content-generating requests per minute and 500 per hour, plus a primary budget of 5,000 REST requests per hour for a normal authenticated user). Those numbers are GitHub's published limits as of this writing and they can change.
 
 Saves never wait for this network path.
 

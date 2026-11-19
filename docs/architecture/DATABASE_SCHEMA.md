@@ -1,6 +1,6 @@
 # Database schema
 
-Status: **Proposed**
+Status: **Accepted** for the product columns (refunds included). The snapshot envelope uses XChaCha20-Poly1305 (ADR-012). Phase 3 still waits for a go-ahead.
 Date: 2026-11-19
 Supersedes: the PostgreSQL schema in the first draft. Do not create that database.
 
@@ -47,7 +47,7 @@ Unique on `(type, lower(trim(name)))`. Seed lists are the names in the PRD (FR-C
 | Column | Type | Notes |
 |---|---|---|
 | id | TEXT pk | |
-| type | TEXT not null | `income` or `expense`. **Proposed:** also `refund`. |
+| type | TEXT not null | `income`, `expense`, or `refund`. Accepted. |
 | amount_minor | INTEGER not null | `> 0` and `<= 10000000000` (₹10,00,00,000.00). |
 | currency | TEXT not null | `INR` in v1. |
 | transaction_date | TEXT not null | `YYYY-MM-DD`, not before `2000-01-01`. The one-year future cap is applied in code against "today" in the user timezone. |
@@ -61,7 +61,7 @@ Unique on `(type, lower(trim(name)))`. Seed lists are the names in the PRD (FR-C
 | deleted_at | TEXT | Tombstone. Null means live. |
 | created_at, updated_at | TEXT not null | |
 
-Proposed trigger: if `type = 'refund'`, the category's type must be `expense`.
+Trigger, accepted: if `type = 'refund'`, the category's type must be `expense`.
 
 A refund's `amount_minor` is still positive. Reports subtract it. Do not store a negative integer.
 
@@ -205,8 +205,8 @@ Encryption envelope (the bytes of `snapshot.enc`):
 
 ```text
 version: 1 byte = 1
-nonce: 12 bytes
-ciphertext: AES-256-GCM(compress(canonical JSON), DEK, nonce), tag appended
+nonce: 24 bytes
+ciphertext: XChaCha20-Poly1305(compress(canonical JSON), DEK, nonce), tag appended
 ```
 
 Compress with deflate. Compression is for size, not secrecy. The nonce is random per write.
@@ -224,7 +224,7 @@ snapshot.enc       envelope above
 ```json
 {
   "format": 1,
-  "cipher": "aes-256-gcm",
+  "cipher": "xchacha20poly1305-ietf",
   "kdf": "argon2id",
   "kdf_salt": "base64",
   "kdf_m_kib": 19456,

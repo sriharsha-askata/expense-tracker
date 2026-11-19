@@ -1,13 +1,14 @@
 # High-Level Design
 
-Status: **Proposed**
+Status: **Accepted** for the product decisions in the 2026-11-19 addenda of `docs/discussions/001-mvp-discovery.md`. Phase 3 still waits for an explicit go-ahead. The snapshot file layout (ADR-014) is the remaining Proposed mechanism.
 Date: 2026-11-19
 Supersedes: the server-based HLD in the first draft on this branch. That draft is not the design to build.
-Owners: DEV. The local-first, no-server, GitHub-sync direction is a Product Owner decision. The mechanism below is DEV's proposal for how to do it without lying about money, conflicts, or deletion.
 
 ## 1. What this is
 
-A native Android app. The ledger lives in SQLite on the phone. A save finishes before any network call. Another phone can join only by syncing through a **private GitHub repository the user owns**, carrying ciphertext, not through a server we operate. Many people can install the app. Their data is not shared, and we never hold it.
+An Expo / React Native app, TypeScript, installed on Android first. The same project can produce an iOS build later. The ledger lives in SQLite on the phone. A save finishes before any network call. GitHub is optional. If the user connects an account, another phone can sync through a **private repository they own**, carrying ciphertext. Many people can install the app. Their data is not shared, and we never hold it.
+
+The Product Owner builds and tests through cloud agents only. He does not install Android Studio. Continuous tests run on GitHub Actions. Installable APKs are produced by EAS Build and downloaded from a link (ADR-018).
 
 There is no household ledger, no hosted Postgres, and no account on a service of ours.
 
@@ -18,7 +19,9 @@ There is no household ledger, no hosted Postgres, and no account on a service of
 - Budgets warn from integer comparisons: `ok`, `approaching`, `at_limit`, `exceeded`.
 - Two writers do not silently overwrite. On one phone that is a local revision check. Across phones it is a conflict screen.
 - A double tap does not create two rows.
-- AI, if it is ever built, proposes a draft and writes only after the user confirms. It is undecided, and it needs a network call the rest of the app does not.
+- The dashboard headline is **Net**: income minus spending. Spending is expenses minus refunds. Reports open on the calendar year and include an Indian financial-year preset, 1 April through 31 March, labeled FY YYYY-YY by the starting year.
+- Past budget months are locked. The current month and future months can be edited.
+- AI is out of the first build. The boundary stays: a later module may only draft, and a write still requires confirmation.
 
 ## 3. Containers
 
@@ -28,7 +31,7 @@ flowchart TB
   phone[Android app]
   db[(SQLite on the phone)]
   gh[User's private GitHub repo]
-  provider[AI provider, optional, undecided]
+  provider[AI provider, not in the first build]
   user --> phone
   phone --> db
   phone -.->|encrypted snapshot, only if sync is on| gh
@@ -98,7 +101,7 @@ What we are relying on, and what fails open (local data remains):
 
 What GitHub will always be able to see: that this account uses the app, when syncs happen, and roughly how large the blob is. Encryption does not hide size or timing. Commit messages are constant so they do not add a note or an amount.
 
-A person who does not want a GitHub account can still use the app on one phone. Export is local. Sync is how a second phone, and a backup, happen. If that is not acceptable, the product decision has to change. We should not invent a server as a quiet fallback.
+A person with no GitHub account uses the app on one phone and exports CSV. That path is complete, not a degraded mode. Sync is the optional second phone and the optional backup. We do not invent a server if they skip GitHub.
 
 ## 8. Security boundary
 
@@ -112,27 +115,28 @@ A person who does not want a GitHub account can still use the app on one phone. 
 | Public repo by mistake | Refuse to sync. |
 | Prompt injection, if AI is built | The model has no write tool. Confirm calls the same SQLite save as the form. |
 | Logs | No amounts, notes, passphrase, recovery code, tokens, or snapshot plaintext. |
-| Lockout | Proposed, from the product-analyst review: wrong passphrase delays the next try. It never wipes the database and it never locks forever. |
+| Lockout | Accepted. A wrong passphrase delays the next try. It never wipes the database and it never locks forever. |
 
-## 9. Proposed product rules not yet confirmed
+## 9. Accepted product rules
 
-The Product Owner has not ruled on these. The schema and the LLD include them as Proposed so we do not paint them out.
-
-| Proposal | Behaviour |
+| Rule | Behaviour |
 |---|---|
-| Refunds | A refund is not income. It subtracts from the expense category it names. Net cash flow still rises, because the spend is reversed. Amounts stay positive; the type carries the direction. |
-| Card bills and EMIs | The app warns, and does not block. Logging the swipe and the later card-bill payment counts twice. An EMI is the installment; logging the full purchase as well counts twice. Transfers between accounts are still out of scope. |
-| CSV | UTF-8 with a BOM so Excel opens it. This reverses the earlier "no BOM" note. |
-| Repeat | "Repeat" copies amount, type, category, payment method, and note into a **new** id dated today. It is not a scheduler and it is not the same entry. |
+| Refunds | A refund is not income. It subtracts from the expense category it names. Amounts stay positive; the type carries the direction. Net is income minus expenses plus refunds. |
+| Card bills and EMIs | The app warns, and does not block. Logging the swipe and the later card-bill payment counts twice. An EMI is the installment; logging the full price as well counts twice. |
+| CSV | UTF-8 with a BOM so Excel opens it. |
+| Repeat | Copies amount, type, category, payment method, and note into a **new** id dated today. Not a scheduler. |
 | No hard lockout | Backoff only. |
+| Headline | The word on the dashboard is **Net**. |
+| Year | Calendar year by default. Indian FY preset included. |
+| Past budgets | Locked. Current and future months stay editable. |
 
 ## 10. AI
 
-Undecided. The module, if it exists, lives on the phone, calls a provider when the network is up, and inserts into SQLite only after confirmation. AI off, or the provider down, changes nothing about save, totals, or sync. No model id is pinned.
+Out of the first build. The module boundary in ADR-005 stays so a later phase does not grow a write tool. No model id is pinned. No provider key is required to build or run the app.
 
 ## 11. What this design will not do
 
-Household sharing. A server-side copy of the ledger. Silent overwrite. Git merge of ciphertext. One API call per entry. A forgot-passphrase link. A promise that GitHub's internal backups forget on our timetable. iOS, unless ADR-012 is replaced before implementation.
+Household sharing. A server-side copy of the ledger. Silent overwrite. Git merge of ciphertext. One API call per entry. A forgot-passphrase link. A promise that GitHub's internal backups forget on our timetable. An iOS binary in the first release. A requirement that the Product Owner install Android Studio.
 
 ## 12. Where the detail lives
 
@@ -141,5 +145,6 @@ Household sharing. A server-side copy of the ledger. Silent overwrite. Git merge
 | Tables | `DATABASE_SCHEMA.md` |
 | Pull, merge, push, HTTP to GitHub | `API_SPECIFICATION.md` |
 | Merge algorithm, budgets, refunds | `LLD.md` |
-| Why these choices | `ADR/ADR-012` through `ADR-017` |
+| Why these choices | `ADR/ADR-012` through `ADR-018` |
+| Cloud test and APK | `ADR-018`, `docs/development/DEVELOPMENT_GUIDE.md` |
 | Old server decisions | ADR-001 through ADR-004, ADR-006, ADR-009, ADR-011, marked Superseded |

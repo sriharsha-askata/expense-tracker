@@ -1,6 +1,6 @@
 # ADR-014: What we store in the GitHub repo
 
-Status: **Proposed**
+Status: **Proposed** — the Product Owner accepted pull-then-merge-then-push, unique ids, user choice on conflicting edits, and tombstones. They have not separately signed the one-snapshot file layout. This record is the layout DEV recommends they include in the Phase 3 approval.
 Date: 2026-11-19
 Decider: DEV
 Related: ADR-015, ADR-016, ADR-017

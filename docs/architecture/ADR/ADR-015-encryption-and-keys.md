@@ -1,8 +1,8 @@
 # ADR-015: Encryption and key management
 
-Status: **Proposed**
+Status: **Accepted**
 Date: 2026-11-19
-Decider: DEV
+Decider: Product Owner for "no reset, one-time recovery code, lost key means lost data." DEV for the key-wrapping construction.
 Supersedes: the session half of ADR-004
 
 ## Context
@@ -17,7 +17,7 @@ Argon2id(passphrase) is the key that encrypts the snapshot. Simple. Changing the
 
 ### B. Random data key, wrapped by a passphrase key; device keystore holds the unwrapped data key
 
-Generate a 256-bit data-encryption key (DEK) on first run. Encrypt snapshots with AES-256-GCM under the DEK. Derive a key-encryption key (KEK) with Argon2id from the passphrase and a salt stored in the manifest. Store the DEK wrapped by the KEK in the manifest. After the user unlocks once, put the DEK in the Android Keystore so ordinary saves and syncs do not ask for the passphrase every time.
+Generate a 256-bit data-encryption key (DEK) on first run. Encrypt snapshots with XChaCha20-Poly1305 under the DEK (libsodium; see ADR-012). AES-256-GCM is the fallback cipher if that build cannot ship, and it requires a format bump. Derive a key-encryption key (KEK) with Argon2id from the passphrase and a salt stored in the manifest. Store the DEK wrapped by the KEK in the manifest. After the user unlocks once, put the DEK in `expo-secure-store` so ordinary saves and syncs do not ask for the passphrase every time.
 
 A second device: sign in to GitHub, enter the passphrase, unwrap the DEK from the manifest, cache it in that phone's keystore.
 
@@ -41,9 +41,9 @@ The key never leaves the phone. A second device cannot decrypt. This fails the P
 
 Option B.
 
-Parameters to record in the manifest and pin in implementation, not invent per device: Argon2id, memory 19 MiB, iterations 2, parallelism 1, random 16-byte salt. AES-256-GCM, random 12-byte nonce per encryption, nonce stored with the ciphertext. These are the OWASP Argon2id baseline; if the library's documented mobile guidance at implementation time is stricter, use that and write it down in the PR.
+Parameters to record in the manifest and pin in implementation, not invent per device: Argon2id, memory 19 MiB, iterations 2, parallelism 1, random 16-byte salt. XChaCha20-Poly1305, random 24-byte nonce per encryption, nonce stored with the ciphertext. These are the OWASP Argon2id baseline; if libsodium's documented interactive limit at implementation time is stricter, use that and write the actual opslimit in the manifest. The KDF runs in native code (ADR-012), not on the JavaScript thread.
 
-Local database: SQLCipher, key generated on device and stored in the Android Keystore, not derived from the passphrase. Losing the passphrase does not, by itself, lock the phone that is already unlocked and still has the DEK. It does stop every other phone, and it stops this phone after the keystore entry is wiped.
+Local database: SQLCipher, key generated on device and stored in `expo-secure-store`, not derived from the passphrase. Losing the passphrase does not, by itself, lock the phone that is already unlocked and still has the DEK. It does stop every other phone, and it stops this phone after the keystore entry is wiped.
 
 **A lost passphrase and a lost recovery code, with no device that still holds the DEK, means the GitHub snapshot cannot be decrypted. The data is gone. The app must say that in the setup screen, in plain language, before the first save that the user cannot afford to lose. There is no support reset. We must not build a "forgot passphrase" flow that pretends otherwise.**
 

@@ -1,71 +1,74 @@
 # Backlog
 
-Status: **Proposed**. Not filed as GitHub issues.
-Last updated: 2026-11-19 by DEV, after the local-first decision.
+Status: **Accepted** as the order of work once Phase 3 is explicitly started. Not filed as GitHub issues.
+Last updated: 2026-11-19 by DEV, after the Product Owner's answers.
 
-The server-shaped milestone list that used to be here is withdrawn. Do not file those issues. Complexity is S/M/L, not dates. Nothing below starts until the Product Owner answers NQ-1 through NQ-6 (or defers them in writing) and the PM updates `docs/product/`.
+Do not file these, and do not start M3, until the Product Owner says Phase 3 may start. The PM's product docs still describe a server; feature slices that follow those docs are the wrong product. Foundation slices (app shell, money, SQLite, CI) do not depend on that rewrite.
 
 ## M1 — Discovery
 
 | Slice | State |
 |---|---|
 | PM docs, first draft | In the repo, unchanged. They still describe a server. |
-| DEV review, first draft | In `docs/discussions/001-mvp-discovery.md`, above the addendum. Historical. |
-| Product Owner local-first direction | Recorded in the addendum. |
-| PM revision of the PRD and acceptance tests | Not done. Blocked on the PM. |
-| NQ-1 through NQ-6 | Blocked on the Product Owner. |
+| Product Owner decisions | Recorded in the addenda of `docs/discussions/001-mvp-discovery.md`. NQ-1 through NQ-6, TQ-5, TQ-6, and PO-Q6 are answered. |
+| PM revision of the PRD and acceptance tests | Not done. Should land before feature slices, not before the Expo shell. |
 
-## M2 — Architecture revision
+## M2 — Architecture
 
 | Slice | State |
 |---|---|
-| HLD, LLD, SQLite schema, sync protocol, new ADRs | In this branch, Proposed. |
-| Server ADRs marked Superseded | Done in this branch. |
-| Product Owner acceptance of this revision | Not done. |
+| Local-first design, Expo, encryption, sync, erasure | In this branch. Accepted except ADR-014 (snapshot layout), which is the recommended format to approve with Phase 3. |
+| Cloud CI and EAS | Specified in ADR-018 and the development guide. The workflow file does not exist yet. |
 
-## M3 — Phone foundation
+## M3 — Phone foundation and cloud loop
 
-Depends on M2 acceptance. Android, unless NQ-1 flips the client to Flutter first.
+Android only. Expo, not Kotlin. No Android Studio on the Product Owner's machine.
 
 | Slice | Complexity | Notes |
 |---|---|---|
-| Kotlin project, no product screens beyond a shell | M | Min SDK 26. |
-| SQLCipher, migrations, schema with no `REAL` column | M | The money and date tests run on the JVM. |
-| Save path: one transaction, `mutation_id`, history | M | Includes the five-minute duplicate prompt. |
-| Passphrase, recovery code, keystore cache of the DEK | L | Copy for "lost key means lost data" is part of this slice, not polish. |
-| CSV export, including the BOM if NQ-5 accepts it | S | Local file only. |
+| Expo project, TypeScript strict, development build config (not Expo Go) | M | Prebuild so SQLCipher and libsodium can link. |
+| GitHub Actions: typecheck, lint, tests on every PR | M | Node only. No emulator. |
+| Money module and tests (`bigint`, `0.10 + 0.20`) | M | |
+| Merge and conflict tests | L | No GitHub network. |
+| Crypto round-trip tests via `libsodium-wrappers` | M | Same parameters as the device library. |
+| SQLite migrations tested with Node SQLite | M | Same SQL files. SQLCipher itself is not what this proves. |
+| SQLCipher, save path, `mutation_id`, history | L | |
+| Passphrase, recovery code, secure-store cache of the DEK | L | The "lost key means lost data" screen is part of the slice. |
+| CSV export with BOM | S | Works with no GitHub account. |
+| EAS internal APK, `workflow_dispatch` only | M | Needs the Product Owner's Expo account and `EXPO_TOKEN` secret. Not on every push. Free tier is 15 Android builds a month. |
 
 ## M4 — Ledger behaviour
 
 | Slice | Complexity | Notes |
 |---|---|---|
-| Categories, stable UUIDv5 seeds | M | Two fresh installs must not fork on first sync. |
-| Transactions, edit, tombstone, restore | L | Totals ignore tombstones. |
-| Budgets and the four states | L | Integer comparisons. Past months locked unless TQ-6 changes. |
-| Reports and dashboard | M | `net` is the field. The on-screen word waits on TQ-5. |
-| Refunds, card/EMI hint, repeat | S each | Only if NQ-5 says yes. Do not build them on a shrug. |
+| Categories, stable UUIDv5 seeds | M | |
+| Transactions, edit, tombstone, 30-day restore | L | |
+| Refunds subtract from the expense category | S | Accepted. |
+| Card / EMI double-count warning, non-blocking | S | Accepted. |
+| Repeat as a new entry dated today | S | Accepted. |
+| Budgets, four states, past months locked | L | Current and future months editable. |
+| Dashboard headline **Net**, calendar year, Indian FY preset | M | FY is 1 Apr–31 Mar. |
 
 ## M5 — GitHub sync
 
-Depends on M4 save and merge being testable without a phone UI. This is the risky milestone.
+Optional for the user. Still required for a second phone.
 
 | Slice | Complexity | Notes |
 |---|---|---|
-| Pure merge tests: two creates, conflicting edits, tombstone versus edit, resolution with two parents | L | No GitHub. These tests are the release bar. |
-| GitHub App device flow, token in the keystore | L | Contents permission, one private repo. Stop if the scope cannot be limited. |
-| Pull, decrypt, merge, one-commit push, retry on moved ref, backoff on 429 | L | Saves must already have returned. |
+| Device flow, token in secure store, refuse public repos | L | |
+| Pull, decrypt, merge, one-commit push, backoff on 429 | L | |
 | Conflict screen blocks the push | M | |
-| Compaction: orphan commit, new DEK, confirmed force-push of the data branch only | L | Not silent. |
-| Delete repository and wipe local keys | S | Copy states the residual about GitHub backups. |
+| Confirmed data-branch squash plus a new data key | L | GitHub may retain copies. Say so. |
+| Delete the repo and wipe local keys | S | Full wipe. Same residual. |
 
 ## M6 — AI
 
-Not scheduled. NQ-6's recommendation is to leave it out of the first implementation. When it is explicitly wanted: on-device draft, confirm through the normal save, no write tool, provider outage does not affect the ledger.
+Not in the first build. Do not schedule it. The boundary is ADR-005.
+
+## M7 — Device end-to-end, later
+
+Maestro or similar, in CI or a device farm, not on the Product Owner's computer. Not a Phase 3 gate.
 
 ## Not in this backlog
 
-A server, Postgres, email login, Redis, household sharing, bank import, one GitHub request per transaction, silent merge, passphrase reset.
-
-## Ordering
-
-Money and merge tests before any sync UI. Sync before compaction. Compaction before anyone is told that delete removes Git history. The PM's product-doc update can happen in parallel with nothing else; it blocks code.
+Kotlin, a server, Postgres, email login, Expo Go as the real app, an APK build on every pull request, Android Studio, a passphrase reset, household sharing.

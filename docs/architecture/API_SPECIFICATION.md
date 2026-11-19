@@ -89,7 +89,7 @@ Cancelling the screen leaves the conflict in place and leaves the push blocked. 
 
 Local file, not a GitHub upload.
 
-- UTF-8 with a leading BOM (`EF BB BF`). **Proposed**, from the product-analyst review, so Excel opens the file. This replaces the earlier no-BOM choice.
+- UTF-8 with a leading BOM (`EF BB BF`), so Excel opens the file. Accepted.
 - Columns, in order: `date`, `type`, `amount`, `currency`, `category`, `payment_method`, `note`, `created_at`.
 - Amounts are plain decimal strings. No rupee sign, no grouping commas.
 - `created_at` is UTC with a `Z` suffix.
@@ -99,11 +99,11 @@ Local file, not a GitHub upload.
 
 ## 8. Repeat
 
-**Proposed.** A local action. New entity id, new `mutation_id`, date is today in the user timezone, copied amount, type, category, payment method, and note. It goes through the normal save path, including the duplicate warning.
+Accepted. A local action. New entity id, new `mutation_id`, date is today in the user timezone, copied amount, type, category, payment method, and note. It goes through the normal save path, including the duplicate warning. The app does this with no GitHub account.
 
-## 9. AI draft, if the feature is ever enabled
+## 9. AI draft
 
-Undecided. Not part of the sync protocol.
+Not in the first build. Not part of the sync protocol. The notes below apply only if a later phase opens the feature.
 
 - The phone sends the user's sentence, the category names, and today's date to the provider. It does not send the database.
 - The response is a draft on screen. SQLite is unchanged.

@@ -1,6 +1,6 @@
 # ADR-007: Money representation
 
-Status: **Proposed** — still in force after the local-first decision.
+Status: **Accepted** — integer paise remain the rule on the Expo client. `number` is not a money type (ADR-012).
 Date: 2026-11-19
 Decider: DEV
 

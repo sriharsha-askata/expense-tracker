@@ -20,10 +20,13 @@ What the new design is accountable for, assuming the product docs catch up:
 | Deletion really removes data from GitHub history | Confirmed squash + new data key, or repo deletion | See ADR-017. Not true of tombstones alone. |
 | Budget states including exactly 100% as `at_limit` | Integer comparisons | PM restated the four names |
 | Change history | `history` rows inside the snapshot | A new phone sees them |
-| CSV formula injection | `domain.csv` | BOM is Proposed, not confirmed |
-| AI writes nothing without confirm | No insert path from the provider | Feature itself is undecided |
-| Refunds reduce the category | Proposed aggregation | Not in the current PRD |
-| Repeat | Proposed new-id save | Not in the current PRD |
+| CSV formula injection and a UTF-8 BOM | `domain.csv` | Accepted |
+| AI writes nothing without confirm | No provider client in the first build | Accepted as deferred |
+| Refunds reduce the category | Aggregation in the LLD | Accepted. The PRD text is not updated yet. |
+| Repeat | New id, today's date | Accepted. The PRD text is not updated yet. |
+| Headline Net, calendar year, Indian FY preset | LLD | Accepted |
+| Past budgets locked | LLD | Accepted |
+| Cloud tests and APK | ADR-018 | Accepted. Not configured yet. |
 | No hard lockout | Backoff only | Replaces AC-AUTH-2.2's throttle-as-lockout. GitHub may still lock the GitHub account; that is not our lockout. |
 
 Server-only criteria (email verification, session cookies, RLS, hosted backup drills, p95 on a server) are not scheduled. The PM should retire or rewrite them when the product docs move.

@@ -394,3 +394,36 @@ I am not treating silence as acceptance. NQ-5 asks for a yes or no on each.
 **NQ-6.** AI stays out of the build until you explicitly want it. Confirm that "undecided" means we do not start it in the first implementation.
 
 **Still open from the first review, and not answered by this direction:** TQ-5 (call the headline number net, or savings), TQ-6 (lock past budget months), PO-Q6 (calendar year or Indian financial year). Bank and SMS import stays out unless you reopen PO-Q3.
+
+---
+
+## Addendum — Product Owner answers (2026-11-19, later)
+
+The Product Owner answered NQ-1 through NQ-6 and the three items left open above. He also required a fully remote test and build loop. This addendum is the decision record. The questions above are closed.
+
+### [DECISION]
+
+| ID | Product Owner decision | Where it is reflected |
+|---|---|---|
+| DEC-PO-7 | First release is Android only. The framework is React Native (Expo, TypeScript), not Kotlin, so a later iOS build is the same project. | ADR-012, **Accepted** |
+| DEC-PO-8 | GitHub is optional. One phone plus CSV export is a complete app. GitHub is only for sync and backup. | ADR-016, **Accepted** |
+| DEC-PO-9 | No passphrase reset. Setup shows a one-time recovery code and says, in plain language, that losing the passphrase and the code means the encrypted copy cannot be opened. | ADR-015, **Accepted** |
+| DEC-PO-10 | Erasure is the proposal he was shown: tombstones for 30 days; a confirmed squash of the data branch plus a new data key to forget old versions; delete the repo to wipe the account. GitHub may retain copies we cannot remove. | ADR-017, **Accepted** |
+| DEC-PO-11 | Analyst items are all in: refunds reduce their expense category; a non-blocking card/EMI double-count warning; CSV is UTF-8 with a BOM; repeat creates a new entry dated today; a wrong passphrase backs off and never hard-locks. | HLD, LLD, schema, sync protocol |
+| DEC-PO-12 | AI is out of the first build. The module boundary stays documented and is not implemented. | ADR-005, **Accepted as deferred** |
+| DEC-PO-13 | The dashboard headline is **Net** (income minus expenses, with refunds reducing expenses). This closes TQ-5. | HLD, LLD |
+| DEC-PO-14 | Reports default to the calendar year. An Indian financial-year preset (1 April–31 March) is included. This closes PO-Q6. | ADR-008, LLD |
+| DEC-PO-15 | Past budget months are locked. The current month and future months stay editable. This closes TQ-6. | LLD |
+| DEC-PO-16 | He will not install Android Studio or any local toolchain. Tests run headless on GitHub Actions. Installable APKs come from EAS Build (internal distribution). | ADR-018, **Accepted**; development guide; backlog |
+
+DEV consequence recorded with DEC-PO-7, not a reversal of it: JavaScript `number` is still a float. Money in this codebase is `bigint` and decimal strings. Expo Go cannot run the real app. The preview he installs is the EAS APK.
+
+DEV consequence recorded with DEC-PO-16: an APK is not built on every pull request. Expo's published Free plan includes 15 Android builds a month. Tests run on every pull request. Builds are on demand. The workflow file itself waits until Phase 3, because there is no project to typecheck yet.
+
+### [DECISION] still with DEV, not yet signed as a separate line
+
+ADR-014, one encrypted snapshot per sync rather than one file per entry, stays **Proposed**. It is what makes the rate limits and the erasure squash practical. Approving Phase 3 should include it or replace it. There is no other open product question from this review.
+
+### [PRODUCT OWNER INPUT REQUIRED]
+
+None from this round. Phase 3 does not start until you say it may start. That sentence is the approval, not a new design question. Bank and SMS import stays out.

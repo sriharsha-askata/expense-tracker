@@ -1,8 +1,8 @@
 # ADR-013: On-device SQLite, no application server
 
-Status: **Proposed**
+Status: **Accepted**
 Date: 2026-11-19
-Decider: DEV. The "no server" part is a Product Owner decision, not a DEV preference.
+Decider: Product Owner (no server, on-device SQLite). DEV specified SQLCipher and the schema.
 Supersedes: ADR-002, ADR-003, ADR-011
 
 ## Context

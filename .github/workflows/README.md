@@ -1,5 +1,5 @@
 # CI workflows
 
-No GitHub Actions workflows are defined yet.
+No workflow file is in this branch. There is no Expo project to typecheck, and an empty green check would be a false result.
 
-No workflow runs on this branch. When implementation starts, CI should run the JVM money and merge tests and a secret scan. It does not need PostgreSQL. The server-shaped workflow described here earlier is withdrawn. See `docs/development/DEVELOPMENT_GUIDE.md`.
+When Phase 3 starts, ADR-018 is the workflow: GitHub Actions runs typecheck, lint, and Node tests on every pull request. EAS Build produces an APK only on demand. See `docs/development/DEVELOPMENT_GUIDE.md`.

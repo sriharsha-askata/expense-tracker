@@ -1,6 +1,6 @@
 # ADR-008: Dates and timezones
 
-Status: **Proposed** — still in force after the local-first decision.
+Status: **Accepted**. Reports default to the calendar year. An Indian financial-year preset (1 Apr through 31 Mar, labeled FY YYYY-YY by the starting year) is included. The stored day does not change.
 Date: 2026-11-19
 Decider: DEV
 

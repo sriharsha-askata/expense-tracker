@@ -1,23 +1,23 @@
 # Low-Level Design
 
-Status: **Proposed**
+Status: **Accepted** for the product rules below. Phase 3 waits for an explicit go-ahead.
 Date: 2026-11-19
-Supersedes: the server LLD. The money, date, and budget-state rules are the same. The place they run is the phone.
+Supersedes: the server LLD. The money, date, and budget-state rules are the same. The place they run is the phone. The language is TypeScript, not Kotlin.
 
 ## 1. Modules
 
 | Module | Does | Must not |
 |---|---|---|
-| `domain.money` | Parse a decimal string to a `Long`, format a `Long`, add `Long`s | Touch Android, SQLite, or `Double` |
+| `domain.money` | Parse a decimal string to a `bigint`, format it, add `bigint`s | Touch React Native, SQLite, or `number` |
 | `domain.calendar` | Today in an IANA zone, month windows, upcoming | Store anything |
 | `domain.budget` | State from two `Long`s | Read the rounded percent |
 | `domain.merge` | Pure function from local rows, remote snapshot, and parents to a merge result | Call GitHub |
 | `domain.csv` | BOM, quoting, formula prefix | Read the network |
 | `db` | SQLCipher, one writer, the save transaction | Encrypt for GitHub (that is the sync module's job, so a bug here cannot skip it) |
 | `sync` | Pull, decrypt, call `domain.merge`, encrypt, push | Be on the save path |
-| `ai` | Optional, undecided. Draft only. | Import the function that inserts a transaction, except through the same save function the form uses, after confirm |
+| `ai` | Not in the first build. The folder stays empty. | Import the save function until a later phase adds a confirm step |
 
-`domain.merge` and `domain.money` are JVM tests with no device and no GitHub.
+`domain.merge` and `domain.money` are Node tests with no device, no emulator, and no GitHub. See ADR-018.
 
 ## 2. Save transaction
 
@@ -53,17 +53,17 @@ Resolution: the user builds the chosen field set. The new rev has both conflicti
 
 Unchanged from the rules that still stand.
 
-- Today is `LocalDate.now(ZoneId.of(timezone))`.
+- Today is the calendar day in the user's IANA zone (`Asia/Kolkata` by default), computed with `Intl` or an explicit timezone library, not by slicing a UTC timestamp.
 - A month is `[first, first of next)`.
 - Upcoming is `transaction_date > today`. It is not a column.
 - Setting this month's budget updates the open row if it already starts this month, or closes the previous open row at this month and inserts a new one.
-- A past month is rejected (`BUDGET_PERIOD_LOCKED`) until the product decision changes.
+- A past month is rejected (`BUDGET_PERIOD_LOCKED`). Accepted. Current and future months remain editable.
+- The year report defaults to 1 January through 31 December. The Indian FY preset is 1 April through 31 March, labeled `FY 2026-27` when it starts in April 2026. Both are date windows over the same rows.
+- The dashboard title for income minus spending is **Net**. Spending is expenses minus refunds, so Net = income − expenses + refunds.
 - Archive of a category sets the open budget's `effective_to` to the first day of next month.
-- State machine is the integer one in the schema doc. The four names `ok`, `approaching`, `at_limit`, `exceeded` are the ones the PM restated with this direction. The earlier naming question is closed.
+- State machine is the integer one in the schema doc: `ok`, `approaching`, `at_limit`, `exceeded`.
 
-## 5. Refunds (Proposed)
-
-If the Product Owner accepts them:
+## 5. Refunds (Accepted)
 
 - `spent(category, month) = sum(expense.amount_minor) - sum(refund.amount_minor)` for live rows of that category dated in the month.
 - A refund of a category the user did not spend on can make `spent` negative. Show it as negative, do not clamp. Clamping would hide money.
@@ -72,9 +72,7 @@ If the Product Owner accepts them:
 - A refund cannot use an income category.
 - Overall budget `spent` uses the same subtraction across all expense categories.
 
-If the Product Owner rejects them, refunds do not exist and a returned amount is an income row, which the app will then mis-state in the category breakdown. That rejection should be explicit, because the analyst's point is that the income treatment is the bug.
-
-## 6. Card and EMI guidance (Proposed)
+## 6. Card and EMI guidance (Accepted)
 
 Not a validator. On save, if the category is `EMI/Loan`, or the payment method is `card` and the note or category looks like a bill payment (a fixed list of hints: "card bill", "credit card payment", "cc payment"), show a dismissible note:
 
@@ -84,9 +82,9 @@ Do not block the save. Do not try to detect this with a model.
 
 ## 7. CSV
 
-`domain.csv` writes the BOM, then the header, then rows from a cursor so a large export is not one giant string. Tests open the bytes, assert the first three are `EF BB BF`, and assert a note of `=1+1` round-trips as a formula-inert cell. This is Proposed until the Product Owner confirms the BOM.
+`domain.csv` writes the BOM, then the header, then rows. Tests open the bytes, assert the first three are `EF BB BF`, and assert a note of `=1+1` round-trips as a formula-inert cell. Accepted.
 
-## 8. Repeat (Proposed)
+## 8. Repeat (Accepted)
 
 The action is a save with a new id and today's date. It does not copy `rev`, `deleted_at`, or `created_at`. The duplicate warning applies, so repeating within five minutes asks first.
 
@@ -99,13 +97,11 @@ The action is a save with a new id and today's date. It does not copy `rev`, `de
 
 ## 10. Sync worker
 
-WorkManager, network connected, not expedited. Also a manual action. The worker runs the protocol in `API_SPECIFICATION.md`. It does not hold a wake lock beyond one attempt. If the app is killed after the SQLite commit and before the push, the outbox is still there and the next run pushes it.
+Sync runs when the app is open: on launch, about 30 seconds after the last save, and when the user taps Sync. A background task (`expo-background-task`) may also run, and it is best-effort. Android can kill it. The outbox survives. If secure storage cannot produce the DEK, skip sync. Do not ask for the passphrase from a background task.
 
-The worker reads the DEK from the keystore. If the keystore cannot produce it (reboot policy, user locked the device in a way that blocks the key), skip sync. Do not ask for the passphrase from a background task. The next foreground open can ask.
+## 11. AI module (not in the first build)
 
-## 11. AI module (undecided)
-
-Same safety rules as ADR-005, on the device:
+Do not create the provider client in Phase 3 or Phase 4. When the feature is opened later, the same safety rules apply:
 
 - No insert function is reachable from the provider client.
 - Confirm builds a normal save.
@@ -124,6 +120,8 @@ Same safety rules as ADR-005, on the device:
 - Snapshot canonical JSON has sorted keys and string amounts; a test encrypts and decrypts.
 - Manifest fixture has no key named amount, note, or category.
 - Wrong authentication tag does not modify SQLite.
-- CSV starts with the BOM once that proposal is accepted; until then the test is marked pending so we do not pretend the Product Owner agreed.
+- CSV starts with the BOM.
+- A financial year window includes 1 April and 31 March and excludes 31 March of the previous year and 1 April of the following year.
+- A budget write for a past month is rejected.
 
-No test in this phase has been written or run.
+These tests run under Node on GitHub Actions (ADR-018). No test in this phase has been written or run.

@@ -1,8 +1,8 @@
 # ADR-005: AI integration
 
-Status: **Proposed** (safety rules only). Phase 5 is **undecided** as of the Product Owner direction on 2026-11-19.
+Status: **Accepted as deferred.** The Product Owner removed AI from the first build on 2026-11-19. The module boundary stays. Do not implement it in Phase 3 or Phase 4.
 Date: 2026-11-19
-Decider: DEV. Whether to build this at all is open. The provider and the spend ceiling remain open.
+Decider: Product Owner for "not in the first build." DEV for the confirm-only boundary, which still applies when someone later opens the feature.
 
 There is no backend. If this is built later, the device calls the provider directly, shows a draft, and writes to SQLite only after the user confirms. The call needs a network. The rest of the app must not. Tokens and prompts stay on the device. Re-read the "backend" wording below as "the on-device AI module." Do not introduce a server to hold the key.
 
