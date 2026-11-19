@@ -1,8 +1,10 @@
 # ADR-005: AI integration
 
-Status: **Proposed**
+Status: **Proposed** (safety rules only). Phase 5 is **undecided** as of the Product Owner direction on 2026-11-19.
 Date: 2026-11-19
-Decider: DEV. The provider, the spend ceiling, and whether any text may leave the machine are pending PO-Q5.
+Decider: DEV. Whether to build this at all is open. The provider and the spend ceiling remain open.
+
+There is no backend. If this is built later, the device calls the provider directly, shows a draft, and writes to SQLite only after the user confirms. The call needs a network. The rest of the app must not. Tokens and prompts stay on the device. Re-read the "backend" wording below as "the on-device AI module." Do not introduce a server to hold the key.
 
 ## Context
 

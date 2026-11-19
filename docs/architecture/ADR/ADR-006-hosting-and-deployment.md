@@ -1,8 +1,11 @@
 # ADR-006: Hosting and deployment
 
-Status: **Proposed**
+Status: **Superseded**
+Superseded: 2026-11-19 by [ADR-016](ADR-016-github-auth-and-sync.md). The Product Owner rejected a hosted ledger. PO-Q4 is closed.
 Date: 2026-11-19
-Decider: DEV for the packaging. The location, the operator, and the budget are pending PO-Q4.
+Decider: DEV
+
+The text below is historical. Do not deploy a Compose stack for user data. The `docker-compose.yml` sketch was removed when this record was superseded.
 
 ## Context
 

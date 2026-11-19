@@ -1,8 +1,11 @@
 # ADR-003: Database
 
-Status: **Proposed**
+Status: **Superseded**
+Superseded: 2026-11-19 by [ADR-013](ADR-013-local-sqlite.md). The ledger is on-device SQLite, not hosted PostgreSQL.
 Date: 2026-11-19
 Decider: DEV
+
+The text below is historical. Do not provision Postgres for the product.
 
 ## Context
 

@@ -1,8 +1,11 @@
 # ADR-004: Authentication
 
-Status: **Proposed**
+Status: **Superseded**
+Superseded: 2026-11-19 by [ADR-015](ADR-015-encryption-and-keys.md) and [ADR-016](ADR-016-github-auth-and-sync.md). There is no server session.
 Date: 2026-11-19
-Decider: DEV. Email-verification policy remains pending TQ-4. Session length remains pending TQ-3.
+Decider: DEV
+
+The text below is historical. Do not build signup, email verification, or server sessions.
 
 ## Context
 

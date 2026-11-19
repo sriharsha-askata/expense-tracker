@@ -5,7 +5,9 @@ Author: DEV
 Date: 2026-11-19 (IST)
 Reviews: `PM_PROPOSAL.md`, `docs/product/PRD.md`, `USER_STORIES.md`, `ACCEPTANCE_CRITERIA.md`, `ROADMAP.md` (committed unchanged)
 
-This note is the DEV agent's evaluation. It does not invent a reply from the PM. Sections under [DISCUSSION] stay open until the PM writes back. [DECISION] records technical choices DEV can own; they are still Proposed until the Product Owner approves the architecture. Product choices are marked pending rather than silently adopted.
+This note is the DEV agent's evaluation. It does not invent a reply from the PM.
+
+**Read the addendum at the end before the sections above.** The Product Owner later chose a native local-first app with GitHub sync and no server. The earlier sections are the withdrawn server review. The addendum is the current decision log.
 
 ---
 
@@ -187,7 +189,7 @@ Nothing here is a reason to delay the architecture review. The pending rows chan
 
 ## [DECISION]
 
-Technical decisions. Status is Proposed until the Product Owner approves the architecture. Rejected options and trade-offs are in the linked ADR. Product rows are not decided here.
+The table below is the **first-draft** decision log from earlier on 2026-11-19. The Product Owner then changed the architecture. Those rows are **not** the plan to build. The decision that replaces them is the addendum at the end of this file. It is kept here so the earlier reasoning is not silently rewritten.
 
 | ID | Decision | Status | Where |
 |---|---|---|---|
@@ -311,4 +313,84 @@ DEV recommendation: a distinct "at limit" state, and "exceeded" only when spend 
 
 ## What I need back from the PM
 
-A short reply on D1 through D7 is enough to close discovery. D4 and D5 change the schema we migrate first. The Product Owner's answers can arrive in parallel; where they are still open, the recommendation in this note is the default I will build only after it is explicitly deferred in writing, not before.
+The paragraph that used to end here asked for a reply on the server-shaped design. That design is withdrawn. The open points are in the addendum.
+
+---
+
+## Addendum — Product Owner direction (2026-11-19)
+
+The Product Owner changed the architecture after the first draft. This addendum is the decision record. The sections above stay as the history of the server proposal. Do not implement them.
+
+### [DECISION]
+
+Confirmed by the Product Owner, and accepted as product decisions:
+
+| ID | Decision |
+|---|---|
+| DEC-PO-1 | Native mobile app, local-first. On-device SQLite is the source of truth. Saves are instant and work offline. |
+| DEC-PO-2 | No backend and no hosted Postgres. We do not hold ledger data or GitHub tokens. |
+| DEC-PO-3 | Anyone can install the app and keep an isolated ledger. This closes PO-Q1 and PO-Q2. It is not a household or shared ledger. |
+| DEC-PO-4 | Sync and backup go through a private GitHub repository the user owns. Pull, then merge, then push. |
+| DEC-PO-5 | Entries created independently merge because their ids differ. Two edits of the same entry since the last sync are shown to the user, who chooses, before any push. Never silently overwrite. |
+| DEC-PO-6 | Deletes sync as tombstones. |
+
+DEV decisions for how to meet that, all still **Proposed** until the Product Owner accepts this revision of the architecture:
+
+| ID | Decision | Where |
+|---|---|---|
+| DEC-T16 | Android client in Kotlin and Jetpack Compose. iOS is not in the first build unless NQ-1 says otherwise. | ADR-012 |
+| DEC-T17 | SQLCipher SQLite, integer paise, calendar dates as `YYYY-MM-DD` text. No server, no Postgres, no Redis. | ADR-013, ADR-007, ADR-008 |
+| DEC-T18 | One encrypted logical snapshot per sync, not one GitHub file per entry and not a git merge of ciphertext. | ADR-014 |
+| DEC-T19 | Random data key wrapped by a passphrase and by a one-time recovery code. Device keystore caches the unwrapped key. Lost passphrase and lost recovery code, with no device still holding the key, means the data is lost. There is no reset. | ADR-015 |
+| DEC-T20 | GitHub App device flow, contents permission on one private repo, tokens only in the keystore. One commit per sync. Back off on rate limits. | ADR-016 |
+| DEC-T21 | 30-day restore is the tombstone in the live snapshot. Real erasure is a confirmed history squash of the **data** branch plus data-key rotation, or deletion of the repo for a full wipe. GitHub may keep internal copies. | ADR-017 |
+| DEC-T22 | Budget states are `ok`, `approaching`, `at_limit`, `exceeded`, from integer comparisons. The PM restated these names with this direction, so TQ-8 is closed. | Schema, LLD |
+| DEC-T23 | AI stays an optional, undecided module. If it is built, the phone calls the provider and writes SQLite only after confirm. | ADR-005 |
+
+Closed by this direction: PO-Q1, PO-Q2, PO-Q4, TQ-3 (server sessions), TQ-4 (email verification), TQ-7 as a server purge (replaced by DEC-T21), TQ-8.
+
+Not closed: the word "savings" versus net (TQ-5), whether a past month's budget can be edited (TQ-6, still proposed as locked), calendar year versus Indian financial year (PO-Q6), bank import (PO-Q3, still out), and whether AI is built (PO-Q5, explicitly undecided).
+
+Withdrawn as the thing to build: Vite, FastAPI, Postgres, server sessions, Docker Compose as the product runtime, row-level security, and the HTTP API. The ADRs are marked Superseded rather than deleted.
+
+### [DEV]
+
+I will build this if the Product Owner keeps it. I do not think it is the low-risk design. The candid version:
+
+GitHub is a reasonable place for a person to keep an encrypted backup, and a bad database. The rate limits, the history that never forgets, the account requirement, and the metadata (when you sync, how large the blob is, which GitHub user you are) are structural. The protocol in this revision stays inside those limits by uploading **one** snapshot per sync and by never putting a save on the network path. That makes the idea workable. It does not make GitHub a normal sync service with a contract. If the OAuth app is suspended, or the user has no GitHub account, the phone still has the ledger and the CSV. That local path is mandatory, not a grace case.
+
+A second bad idea, which I am not doing: letting git merge the encrypted file, or writing one API object per transaction. The first cannot see a conflict. The second will hit GitHub's content-creation limits as soon as the phone has been offline for a while.
+
+Deletion is the place the new direction can quietly lie. Tombstones give a real 30-day restore. They do not erase Git history. I am recommending a confirmed squash of the data branch plus a new data key, and repo deletion for a full wipe, and a sentence in the product that GitHub's own backups are outside our reach. Key rotation alone does not do it. Squash alone does not do it if the old key still opens whatever blobs remain.
+
+The passphrase cannot be reset. If a later review asks for "forgot passphrase," the honest answer is that it reintroduces a server or a stored key, which DEC-PO-2 forbids.
+
+Android-only is a product hole if "anyone can install" includes an iPhone in the first release. I am not guessing that it does. NQ-1 is the question. Flutter is the alternative, and it should be chosen before code, not after.
+
+### [DISCUSSION]
+
+Analyst findings, folded in as **Proposed**. The Product Owner has not confirmed them. They are in the schema and the LLD so the next edit does not assume them away.
+
+- Refunds reduce the expense category. They are not income. The amount stays a positive integer.
+- The app warns, and does not block, when a card-bill payment or an EMI is likely to double-count a purchase already logged.
+- CSV is UTF-8 with a BOM.
+- Repeat copies a past transaction into a new id dated today. It is not a recurring scheduler.
+- A wrong passphrase backs off and never wipes or permanently locks.
+
+I am not treating silence as acceptance. NQ-5 asks for a yes or no on each.
+
+### [PRODUCT OWNER INPUT REQUIRED]
+
+**NQ-1.** Does the first release have to run on iPhone, or is Android enough until a later client? Android keeps Kotlin. Both platforms in the first release should switch this design to Flutter before any code.
+
+**NQ-2.** Is it acceptable that sync requires a GitHub account, while a person with no GitHub account can still keep a ledger on one phone and export CSV?
+
+**NQ-3.** Please confirm there is no passphrase reset, and that setup shows a one-time recovery code. Losing both, with no phone that still has the key, means the GitHub copy cannot be opened.
+
+**NQ-4.** Please confirm erasure: day-to-day deletes are tombstones for 30 days; forgetting old versions is a confirmed history squash of the data repo plus a new data key; deleting the account deletes the repo and the local keys. GitHub may keep internal copies we cannot remove.
+
+**NQ-5.** Yes or no on each analyst item: refunds as negative expenses, the card/EMI warning, the CSV BOM, repeat-as-a-new-entry, and no hard lockout.
+
+**NQ-6.** AI stays out of the build until you explicitly want it. Confirm that "undecided" means we do not start it in the first implementation.
+
+**Still open from the first review, and not answered by this direction:** TQ-5 (call the headline number net, or savings), TQ-6 (lock past budget months), PO-Q6 (calendar year or Indian financial year). Bank and SMS import stays out unless you reopen PO-Q3.

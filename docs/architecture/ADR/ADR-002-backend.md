@@ -1,8 +1,11 @@
 # ADR-002: Backend
 
-Status: **Proposed**
+Status: **Superseded**
+Superseded: 2026-11-19 by [ADR-013](ADR-013-local-sqlite.md). There is no application server.
 Date: 2026-11-19
 Decider: DEV
+
+The text below is historical. Do not build a FastAPI service.
 
 ## Context
 

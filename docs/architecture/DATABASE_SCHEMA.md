@@ -1,346 +1,250 @@
-# Database Schema
+# Database schema
 
 Status: **Proposed**
 Date: 2026-11-19
-Engine: PostgreSQL 16
-Migrations: Alembic, one head, forward-only once applied
+Supersedes: the PostgreSQL schema in the first draft. Do not create that database.
 
-Types below are the contract for the first migration. Names can still change before that migration is written; behaviour should not, without a new ADR.
+Two shapes are specified: SQLite on the device, which is the source of truth, and the logical snapshot that is encrypted and stored in the user's private GitHub repo.
 
-## 1. Conventions
+## 1. SQLite rules
 
-- Primary keys are UUID v7, generated in the application, so inserts are time-ordered and ids are not guessable counters.
-- Every table that holds one person's private data has `user_id uuid not null` referencing `users(id)`.
-- Money is `amount_minor bigint` plus `currency char(3)`. Never `real`, `double precision`, or `numeric` for stored amounts. See ADR-007 for why not `numeric`.
-- Transaction day is `date`. System times are `timestamptz` default `now()`.
-- The application role `expense_app` is not a superuser and does not own tables. Row-level security applies to it. The migration role owns tables and the purge function.
-- Extensions: `btree_gist` only, for the budget range exclusion constraint.
+- SQLite with WAL, `foreign_keys=ON`, SQLCipher. The SQLCipher key is random and lives in the Android Keystore. It is not the passphrase.
+- Money columns are `INTEGER` minor units. The schema contains no `REAL` column. A review check fails if one appears.
+- Calendar days are `TEXT` `YYYY-MM-DD`. Instants are `TEXT` UTC ISO-8601. There is no timestamp affinity that shifts a date across midnight.
+- Primary keys are UUID strings. Default category ids are UUIDv5 of the UTF-8 bytes of `type` + `\n` + `name`, namespace `6f1d4c8a-9b3e-4f2a-8c7d-0e1f2a3b4c5d` (a constant chosen for this app, not a registered URN). Every install must produce the same ids. Pin the first id in a test vector when code exists.
+- `rev` is a random UUID for that version of the row. `base_rev` is the `rev` this version was edited from, or null for a create. A resolved conflict stores two parents; see `rev_parent`.
+- Amounts in JSON, history, and the snapshot are decimal strings, never JSON numbers.
 
-## 2. Roles and session context
+### 1.1 settings
+
+Singleton. Synced as one entity so two phones notice a timezone clash instead of flipping it silently.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | TEXT pk | Fixed id `settings`. |
+| timezone | TEXT not null | IANA, default `Asia/Kolkata`. |
+| home_currency | TEXT not null | `INR`. |
+| rev | TEXT not null | |
+| base_rev | TEXT | |
+| updated_at | TEXT not null | |
+
+### 1.2 categories
+
+| Column | Type | Notes |
+|---|---|---|
+| id | TEXT pk | UUIDv5 for defaults. |
+| type | TEXT not null | `income` or `expense`. |
+| name | TEXT not null | Trimmed, 1–40 code points. |
+| sort_order | INTEGER not null | |
+| archived_at | TEXT | |
+| rev, base_rev | TEXT | |
+| updated_at | TEXT not null | |
+
+Unique on `(type, lower(trim(name)))`. Seed lists are the names in the PRD (FR-CAT-1), unchanged until the PM edits the product docs.
+
+### 1.3 transactions
+
+| Column | Type | Notes |
+|---|---|---|
+| id | TEXT pk | |
+| type | TEXT not null | `income` or `expense`. **Proposed:** also `refund`. |
+| amount_minor | INTEGER not null | `> 0` and `<= 10000000000` (₹10,00,00,000.00). |
+| currency | TEXT not null | `INR` in v1. |
+| transaction_date | TEXT not null | `YYYY-MM-DD`, not before `2000-01-01`. The one-year future cap is applied in code against "today" in the user timezone. |
+| category_id | TEXT not null | References `categories(id)`. |
+| payment_method | TEXT | `upi`, `card`, `cash`, `net_banking`, `other`, or null. |
+| note | TEXT | At most 500 code points. |
+| source | TEXT not null | `manual`, `repeat`, or `ai_assistant`. |
+| mutation_id | TEXT | Unique when set. One save gesture, one id. |
+| rev | TEXT not null | |
+| base_rev | TEXT | |
+| deleted_at | TEXT | Tombstone. Null means live. |
+| created_at, updated_at | TEXT not null | |
+
+Proposed trigger: if `type = 'refund'`, the category's type must be `expense`.
+
+A refund's `amount_minor` is still positive. Reports subtract it. Do not store a negative integer.
+
+### 1.4 rev_parent
+
+A normal edit has one parent, equal to `base_rev`, and this table may mirror it. A conflict resolution has two parents: the two heads the user looked at.
+
+| Column | Type |
+|---|---|
+| rev | TEXT not null |
+| parent_rev | TEXT not null |
+| entity | TEXT not null |
+| entity_id | TEXT not null |
+
+Primary key `(rev, parent_rev)`.
+
+### 1.5 budgets
+
+Effective-dated, as in the earlier design. The product rule did not change. Past months stay locked unless the PM reopens that (still proposed).
+
+| Column | Type | Notes |
+|---|---|---|
+| id | TEXT pk | |
+| category_id | TEXT | Null means the overall budget. |
+| amount_minor | INTEGER not null | Same bounds as transactions. |
+| currency | TEXT not null | |
+| effective_from | TEXT not null | First of a month. |
+| effective_to | TEXT | First of a later month, exclusive. Null means open. |
+| rev, base_rev | TEXT | |
+| deleted_at | TEXT | Closing a current-month budget that never applied to a past month may delete the row locally; the sync form is a tombstone or an `effective_to` update so other devices see it. Prefer an `effective_to` update over a hard delete, so history is a normal merge. |
+| updated_at | TEXT not null | |
+
+Overlapping periods for the same scope are rejected in a transaction before commit. SQLite has no exclusion constraint; the LLD holds the lock by doing the check and the write in one transaction on a single writer connection. There is one writer on a phone.
+
+### 1.6 history
+
+Local and synced, so a new phone can show change history.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | TEXT pk | |
+| entity | TEXT not null | `transaction`, `budget`, `category`, `settings`. |
+| entity_id | TEXT not null | |
+| rev | TEXT not null | |
+| action | TEXT not null | `created`, `updated`, `deleted`, `restored`, `purged`. |
+| before_json | TEXT | Decimal strings for amounts. |
+| after_json | TEXT | |
+| source | TEXT not null | |
+| device_id | TEXT not null | |
+| at | TEXT not null | UTC. |
+
+No API edits this table. A purge removes history rows for that entity from the **live** snapshot only.
+
+### 1.7 conflicts
+
+Rows waiting for a human. While any row exists here, sync may pull and may update this table, and it must not push a snapshot that picks a winner.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | TEXT pk | |
+| entity | TEXT not null | |
+| entity_id | TEXT not null | |
+| local_json | TEXT not null | Full row, decimal strings. |
+| remote_json | TEXT not null | Full row, decimal strings. |
+| created_at | TEXT not null | |
+
+### 1.8 outbox
+
+Plaintext, local only, inside SQLCipher. Not copied into the snapshot as a second channel. The snapshot is the state after the outbox has been applied locally, which it already has.
+
+| Column | Type | Notes |
+|---|---|---|
+| op_id | TEXT pk | |
+| entity | TEXT not null | |
+| entity_id | TEXT not null | |
+| created_at | TEXT not null | |
+
+The outbox means "local state is ahead of the last successful push." The payload is the SQLite row itself, so there is one copy to get wrong, not two.
+
+### 1.9 sync_state
+
+| Key | Value |
+|---|---|
+| device_id | UUID created on first launch |
+| last_pushed_sha | Git blob or commit sha of the snapshot we last successfully pushed or pulled |
+| last_pulled_at | UTC instant |
+| compacted_through | Id of the last compaction this device has accepted |
+
+## 2. Indexes
 
 ```text
-expense_migrator   owns tables and the purge function, used only by Alembic
-expense_app        used by the API, subject to RLS
+transactions (transaction_date DESC, created_at DESC, id DESC) WHERE deleted_at IS NULL
+transactions (category_id, transaction_date) WHERE deleted_at IS NULL
+transactions (type, amount_minor, category_id, transaction_date, created_at) WHERE deleted_at IS NULL
+history (entity, entity_id, at)
 ```
 
-At the start of every authenticated API transaction:
+The duplicate warning (same type, amount, category, and date within five minutes) reads the third index. It is a prompt, not a unique constraint. "Save anyway" inserts a second id.
 
-```sql
-select set_config('app.user_id', :user_id, true);
-```
+## 3. Budget state
 
-`true` means the setting dies at commit or rollback. Policies compare `user_id::text` to `current_setting('app.user_id', true)`. When the setting is missing, `current_setting(..., true)` is null and the comparison fails. Fail closed.
+Unchanged arithmetic, now on SQLite integers:
 
-Auth routes that do not have a user yet do not use `expense_app` against tenant tables. They call `SECURITY DEFINER` functions owned by `expense_migrator`: `register_user`, `verify_email`, `start_password_reset`, `complete_password_reset`. Those functions do not accept a caller-supplied `user_id` for reads of transactions; they only touch `users`, `email_tokens`, and `sessions`.
+- approaching or worse when `spent * 100 >= budget * 80`
+- `at_limit` when `spent = budget`
+- `exceeded` when `spent > budget`
+- otherwise, if the first line is true, `approaching`
+- otherwise `ok`
 
-## 3. Tables
+`spent` for a category is the sum of live expense rows in that month, minus the sum of live refund rows in that month if refunds are accepted. Income is not spent. Tombstones are not spent. The overall budget uses the same rule across categories.
 
-### 3.1 users
+Display percentages are half-up to one decimal, in application code, from those integers. They are not stored. They do not decide the state. A rounded 80.0 can still be `ok`. Category shares are not nudged to sum to 100.
 
-| Column | Type | Notes |
-|---|---|---|
-| id | uuid pk | |
-| email | text not null | Stored lowercase, trimmed |
-| password_hash | text not null | Argon2id encoded string |
-| timezone | text not null default `Asia/Kolkata` | IANA name. Reject unknown zones in the API. |
-| home_currency | char(3) not null default `INR` | |
-| email_verified_at | timestamptz null | |
-| ai_enabled | boolean not null default false | |
-| ai_disclosure_accepted_at | timestamptz null | |
-| deletion_requested_at | timestamptz null | |
-| created_at | timestamptz not null default now() | |
-| updated_at | timestamptz not null default now() | |
+## 4. Snapshot format (plaintext, before compression and encryption)
 
-Constraints: unique index on `email`. Check `home_currency ~ '^[A-Z]{3}$'`. Check `char_length(timezone) between 1 and 64`.
-
-RLS: a user may select and update only the row with `id = app.user_id`. Inserts go through `register_user`.
-
-### 3.2 sessions
-
-| Column | Type | Notes |
-|---|---|---|
-| id | uuid pk | |
-| user_id | uuid not null references users(id) on delete cascade | |
-| token_hash | bytea not null | SHA-256 of the cookie value |
-| created_at | timestamptz not null default now() | Absolute lifetime starts here |
-| last_seen_at | timestamptz not null default now() | Idle lifetime |
-| expires_at | timestamptz not null | Absolute expiry, proposed login + 30 days |
-| revoked_at | timestamptz null | |
-
-Unique on `token_hash`. Index `(user_id)`.
-
-RLS: select and update own rows. Insert of a session happens in the login definer or, after the password check, as the user. Revoke is an update of `revoked_at`. The application never needs another user's session.
-
-### 3.3 login_attempts
-
-| Column | Type | Notes |
-|---|---|---|
-| id | bigint generated always as identity pk | Not a public id |
-| email | text not null | |
-| ip | inet null | Short-lived, this table only |
-| attempted_at | timestamptz not null default now() | |
-
-No RLS. Only the login definer inserts and the maintenance function deletes. The API role has no privileges on this table. Index `(email, attempted_at)`.
-
-### 3.4 email_tokens
-
-| Column | Type | Notes |
-|---|---|---|
-| id | uuid pk | |
-| user_id | uuid not null references users(id) on delete cascade | |
-| purpose | text not null | `verify_email` or `password_reset` |
-| token_hash | bytea not null | |
-| expires_at | timestamptz not null | 24 h verify, 30 min reset |
-| used_at | timestamptz null | |
-
-Unique on `token_hash`. Check purpose in the allowed set. No privileges for `expense_app`. Definer functions only.
-
-### 3.5 categories
-
-| Column | Type | Notes |
-|---|---|---|
-| id | uuid pk | |
-| user_id | uuid not null references users(id) on delete cascade | |
-| type | text not null | `income` or `expense` |
-| name | text not null | Trimmed, 1–40 code points |
-| sort_order | integer not null | Seed order, then increasing |
-| archived_at | timestamptz null | |
-| created_at | timestamptz not null default now() | |
-| updated_at | timestamptz not null default now() | |
-
-Checks: type in (`income`, `expense`), `char_length(name) between 1 and 40`.
-
-Unique index: `(user_id, type, lower(btrim(name)))`.
-
-Unique constraint `(id, user_id, type)` to support the composite foreign key from transactions.
-
-RLS: all commands restricted to `user_id`. Hard delete is a real `DELETE`, allowed for this table only when the service has checked references. Transactions reference categories with `ON DELETE RESTRICT`, so a category that is in use cannot disappear.
-
-Seed lists, created once in the verify transaction, expense then income, `sort_order` from 10 in steps of 10:
-
-Expense: Food & Dining, Groceries, Transport, Fuel, Rent, Utilities & Bills, Mobile & Internet, Shopping, Health, Entertainment, Subscriptions, Travel, Education, Personal Care, Gifts & Donations, EMI/Loan, Other.
-
-Income: Salary, Freelance, Interest, Refund, Gift, Other.
-
-### 3.6 transactions
-
-| Column | Type | Notes |
-|---|---|---|
-| id | uuid pk | |
-| user_id | uuid not null | |
-| type | text not null | `income` or `expense` |
-| amount_minor | bigint not null | |
-| currency | char(3) not null | |
-| transaction_date | date not null | The calendar day |
-| category_id | uuid not null | |
-| payment_method | text null | `upi`, `card`, `cash`, `net_banking`, `other` |
-| note | text null | At most 500 code points, no NUL |
-| source | text not null | `manual` or `ai_assistant` |
-| version | integer not null default 1 | |
-| created_at | timestamptz not null default now() | |
-| updated_at | timestamptz not null default now() | |
-| deleted_at | timestamptz null | Null means live |
-
-Checks:
-
-- type in (`income`, `expense`)
-- source in (`manual`, `ai_assistant`)
-- `amount_minor > 0 and amount_minor <= 10000000000`
-- `currency ~ '^[A-Z]{3}$'`
-- payment method null or in the enum
-- `version >= 1`
-- note length ≤ 500
-- `transaction_date >= date '2000-01-01'`
-
-There is no check that the date is within one year of today, because that bound moves and is enforced in the service against the user's timezone.
-
-Foreign keys:
-
-```text
-(category_id, user_id, type) → categories(id, user_id, type)
-(user_id) → users(id)
-```
-
-The composite key rejects another user's category, and an expense filed against an income category, inside the database (AC-TXN-1.6, AC-AUTH-4.3).
-
-RLS on all commands by `user_id`.
-
-Grants: `expense_app` may `SELECT`, `INSERT`, `UPDATE`. It may not `DELETE`. Soft delete is an update of `deleted_at`.
-
-Trigger `transactions_version`: before update, require that `NEW.version = OLD.version + 1`, and set `updated_at = now()`. Reject updates that change `id`, `user_id`, `created_at`, or `source`.
-
-### 3.7 budgets
-
-| Column | Type | Notes |
-|---|---|---|
-| id | uuid pk | |
-| user_id | uuid not null references users(id) on delete cascade | |
-| category_id | uuid null | Null means the overall budget |
-| scope_key | text generated always as (`coalesce(category_id::text, '__overall__')`) stored | |
-| amount_minor | bigint not null | Same bounds as transactions |
-| currency | char(3) not null | |
-| effective_from | date not null | First day of a month |
-| effective_to | date null | First day of a later month, exclusive. Null means open. |
-| version | integer not null default 1 | |
-| created_at | timestamptz not null default now() | |
-| updated_at | timestamptz not null default now() | |
-
-Checks:
-
-- `amount_minor > 0 and amount_minor <= 10000000000`
-- `extract(day from effective_from) = 1`
-- `effective_to is null or (extract(day from effective_to) = 1 and effective_to > effective_from)`
-- currency pattern as above
-- `version >= 1`
-- category, when set, belongs to the same user: composite foreign key `(category_id, user_id) → categories(id, user_id)`
-
-Exclusion constraint, using `btree_gist`:
-
-```text
-exclude using gist (
-  user_id with =,
-  scope_key with =,
-  daterange(effective_from, coalesce(effective_to, 'infinity'::date), '[)') with &&
-)
-```
-
-Two overall budgets, or two budgets for the same category, cannot overlap. Carry-forward is represented by an open `effective_to`.
-
-RLS by `user_id`. Update and delete are both needed: clearing a budget that was created this month deletes that row; closing an older period updates `effective_to`. Audit rows record both.
-
-Version trigger: same rule as transactions, and reject changes to `user_id`, `category_id`, and `effective_from` after insert. A new period is a new row, not an edited start date. Amount edits on the current period are allowed.
-
-### 3.8 audit_events
-
-| Column | Type | Notes |
-|---|---|---|
-| id | uuid pk | |
-| user_id | uuid not null | |
-| actor_user_id | uuid not null | Equal to `user_id` in v1 |
-| entity_type | text not null | `transaction`, `budget`, `category` |
-| entity_id | uuid not null | Not a foreign key. The subject may be purged. |
-| action | text not null | For example `transaction.updated` |
-| before | jsonb null | Decimal strings for amounts |
-| after | jsonb null | |
-| source | text not null | `manual`, `ai_assistant`, `system` |
-| request_id | uuid null | |
-| created_at | timestamptz not null default now() | |
-
-Checks: entity type, source, and action drawn from fixed lists in the migration so a typo cannot land.
-
-RLS: select and insert own rows. No update policy, and no delete policy, for `expense_app`.
-
-Grants: `SELECT`, `INSERT` only.
-
-Trigger: `BEFORE UPDATE OR DELETE` raises unless `current_user` is `expense_migrator`. The purge function is `SECURITY DEFINER` with owner `expense_migrator`, so the body runs as that user and the trigger allows the delete. The API cannot impersonate the owner.
-
-JSON shape for a transaction `before` / `after` object:
+Canonical JSON. Object keys sorted. No insignificant whitespace. UTF-8. Amounts are strings. This is the bytes that are then compressed and sealed. It is never written to GitHub and never logged.
 
 ```json
 {
-  "type": "expense",
-  "amount": "350.00",
-  "currency": "INR",
-  "date": "2026-11-19",
-  "category_id": "uuid",
-  "payment_method": "upi",
-  "note": "lunch",
-  "deleted": false
+  "compacted_through": null,
+  "conflicts": [],
+  "device_id": "uuid-of-writer",
+  "format": 1,
+  "purged_ids": [],
+  "rows": {
+    "budgets": [],
+    "categories": [],
+    "history": [],
+    "rev_parents": [],
+    "settings": {},
+    "transactions": []
+  }
 }
 ```
 
-Amounts in this JSON are strings. A check constraint cannot fully enforce that; the service test does.
+`purged_ids` is the list of entity ids a compaction removed, so a phone that still has them locally does not treat "missing" as "create them again." The list is inside the ciphertext. The next compaction clears it after every device the user still cares about has synced, which we cannot know; clear it on the compaction after the one that introduced it, and accept that a phone offline across two compactions can resurrect a purged row. The compaction screen says that.
 
-### 3.9 idempotency_keys
+`conflicts` in the snapshot are the unresolved ones. A phone that pulls them shows the same choice and does not push a different winner.
 
-| Column | Type | Notes |
-|---|---|---|
-| id | uuid pk | |
-| user_id | uuid not null references users(id) on delete cascade | |
-| idempotency_key | text not null | 16–64 chars, the header value |
-| request_hash | bytea not null | |
-| state | text not null | `in_progress` or `completed` |
-| response_status | integer null | |
-| response_body | jsonb null | The HTTP body that will be replayed |
-| created_at | timestamptz not null default now() | |
-| completed_at | timestamptz null | |
-
-Unique `(user_id, idempotency_key)`. Check key charset, state, and that a completed row has a status. RLS by `user_id`.
-
-The response body is the API's own response, which contains amounts. It is covered by the same purge as the user and by the 24-hour cleanup. It is not an audit trail. Do not log it.
-
-## 4. Indexes
+Encryption envelope (the bytes of `snapshot.enc`):
 
 ```text
-transactions (user_id, transaction_date desc, created_at desc, id desc)
-  where deleted_at is null
-
-transactions (user_id, category_id, transaction_date)
-  where deleted_at is null
-
-transactions (user_id, type, amount_minor, category_id, transaction_date, created_at)
-  where deleted_at is null
-  -- duplicate warning lookup
-
-categories (user_id, type, sort_order)
-
-budgets (user_id, scope_key, effective_from desc)
-
-audit_events (user_id, entity_type, entity_id, created_at)
-
-sessions (token_hash)
-
-idempotency_keys (created_at)
+version: 1 byte = 1
+nonce: 12 bytes
+ciphertext: AES-256-GCM(compress(canonical JSON), DEK, nonce), tag appended
 ```
 
-The partial indexes keep soft-deleted rows out of the hot paths. Trash view uses a second index:
+Compress with deflate. Compression is for size, not secrecy. The nonce is random per write.
+
+## 5. Repository layout
 
 ```text
-transactions (user_id, deleted_at desc) where deleted_at is not null
+README.md          plaintext, no financial data, says the repo is an encrypted ledger
+manifest.json      plaintext, no amounts, no notes, no names
+snapshot.enc       envelope above
 ```
 
-No GIN trigram index in the first migration. Note search at the stated volume is a sequential filter inside the user's rows.
+`manifest.json`:
 
-## 5. Row-level security policies
-
-Do not `FORCE ROW LEVEL SECURITY`. The API role is not the table owner, so policies still apply to every request the application makes. The owner bypasses RLS, which is what lets the purge function (security definer, owned by the migrator) delete rows. The application connection string must not be the migrator. A test connects as `expense_app` with `app.user_id` unset and asserts zero tenant rows.
-
-For each of `categories`, `transactions`, `budgets`, `audit_events`, `idempotency_keys`, `sessions`:
-
-```text
-using (
-  user_id::text = current_setting('app.user_id', true)
-)
-with check (
-  user_id::text = current_setting('app.user_id', true)
-)
+```json
+{
+  "format": 1,
+  "cipher": "aes-256-gcm",
+  "kdf": "argon2id",
+  "kdf_salt": "base64",
+  "kdf_m_kib": 19456,
+  "kdf_t": 2,
+  "kdf_p": 1,
+  "wrapped_dek": "base64",
+  "wrapped_dek_recovery": "base64",
+  "snapshot": "snapshot.enc"
+}
 ```
 
-`users` uses `id` instead of `user_id`.
+`wrapped_dek_recovery` may be absent if the user refused the recovery code. The manifest must not grow an `entry_count` or a note. File size is already visible.
 
-A second test asserts `expense_app` has no `DELETE` grant on `audit_events` or `transactions`.
+Commit message, always: `Update encrypted ledger`.
 
-## 6. Purge function
+## 6. What is deliberately absent
 
-`purge_expired(now timestamptz) returns void`, security definer, owner `expense_migrator`, granted to `expense_app` so the maintenance command can call it without owning tables.
-
-Inside, for each transaction with `deleted_at` older than 30 days: delete the `audit_events` rows whose `entity_type` is `transaction` and whose `entity_id` is that transaction, then delete the transaction. Do this in one database transaction per batch so a crash cannot leave an audit row whose transaction is already gone, or the reverse.
-
-The same function then deletes idempotency keys older than 24 hours, login attempts older than 1 day, used or expired email tokens, and users with `deletion_requested_at` older than 30 days along with every row they still own.
-
-The function does not take a user-supplied filter that the API can aim at another person, other than "everything that is due." The maintenance command calls it with the database clock.
-
-## 7. What is deliberately absent
-
-- No `float` or `double precision` columns.
-- No stored `upcoming` flag.
-- No stored budget utilisation or percentage.
-- No `savings` column. Net is computed.
-- No draft table. Phase 5 drafts are not rows.
-- No notification table. Warnings are computed.
-- No accounts, transfers, currencies-with-rates, or household membership tables.
-- No database enum types for payment method and transaction type. Text plus a check constraint is easier to extend in a later migration without the operational pain of altering a Postgres enum. The allowed values are still closed.
-
-## 8. Backup
-
-The schema is covered by a full `pg_dump` of the database. There is no file store beside Postgres in MVP. Restoring the dump restores the ledger. The dump is encrypted by the operator's tool (age or gpg) before it hits disk that is not the database volume. Keys are not in the repo. Retention is 7 daily dumps. This procedure is Phase 6 work; the schema only has to remain dump-friendly, which a single database is.
+- No `REAL` column and no float JSON.
+- No server user table, no session table, no email token table.
+- No raw SQLite file in the repo.
+- No per-entry file in the repo (ADR-014).
+- No plaintext changelog.
+- No shared household tables.

@@ -2,324 +2,128 @@
 
 Status: **Proposed**
 Date: 2026-11-19
-Depends on: `HLD.md`, `DATABASE_SCHEMA.md`, `API_SPECIFICATION.md`
-
-Algorithms and module rules for the first implementation. Where a product question is still open, the behaviour below is the proposed default and is labelled pending.
+Supersedes: the server LLD. The money, date, and budget-state rules are the same. The place they run is the phone.
 
 ## 1. Modules
 
-| Module | Owns | Must not |
+| Module | Does | Must not |
 |---|---|---|
-| `domain.money` | Parse a decimal string to minor units, format minor units to a 2-decimal string, add minor units | Import the ORM, format with locale, call `float` |
-| `domain.calendar` | Month bounds, year bounds, "today" from an IANA zone, upcoming predicate | Store anything |
-| `domain.budget` | State from two integers: spent and budget | Round the state off a displayed percent |
-| `domain.csv` | RFC 4180 encoding and formula-injection prefix | Query the database |
-| `services.*` | One use case, one database transaction | Return another user's row, catch and ignore a version conflict |
-| `db` | Session, `set_config('app.user_id', ..., true)`, models | Encode product rules that belong in `domain` |
-| `ai` | Call the provider, validate the suggestion, execute read tools | Insert into `transactions` |
+| `domain.money` | Parse a decimal string to a `Long`, format a `Long`, add `Long`s | Touch Android, SQLite, or `Double` |
+| `domain.calendar` | Today in an IANA zone, month windows, upcoming | Store anything |
+| `domain.budget` | State from two `Long`s | Read the rounded percent |
+| `domain.merge` | Pure function from local rows, remote snapshot, and parents to a merge result | Call GitHub |
+| `domain.csv` | BOM, quoting, formula prefix | Read the network |
+| `db` | SQLCipher, one writer, the save transaction | Encrypt for GitHub (that is the sync module's job, so a bug here cannot skip it) |
+| `sync` | Pull, decrypt, call `domain.merge`, encrypt, push | Be on the save path |
+| `ai` | Optional, undecided. Draft only. | Import the function that inserts a transaction, except through the same save function the form uses, after confirm |
 
-Routers translate HTTP to a service call and a service result to HTTP. They do not contain arithmetic.
+`domain.merge` and `domain.money` are JVM tests with no device and no GitHub.
 
-## 2. Money
+## 2. Save transaction
 
-### 2.1 Representation
+Single SQLite connection, WAL, one transaction at a time. The UI awaits that transaction and nothing else.
 
-INR minor unit is the paisa. `1 INR = 100` minor units. The exponent `2` lives in code next to the currency code until a second currency exists. Unknown currencies are rejected.
+`mutation_id` is created when the user commits a gesture, not when the screen opens, so a cancelled form has no id. A retry of a failed disk write reuses it. A second tap while the first transaction is in flight reuses it and the unique index returns the first row.
 
-Database column: `amount_minor bigint`, check `> 0` and `<= 10000000000` (₹100,000,000.00, which is ₹10,00,00,000.00). The upper bound is inclusive, matching "reject **greater than** 10,00,00,000.00".
+Revision: `new_rev` is a random UUID. Parent is the row's current `rev`, or none for an insert. `history` stores before/after with amounts as decimal strings.
 
-API field: string. Canonical form on output is always two decimal places (`"350.00"`, `"0.30"`).
+The duplicate-warning query is inside the same transaction, so two taps cannot both miss it. It does not take a GitHub lock. Two phones can each record a ₹40 chai without a warning; that is a real second purchase unless the user later calls it a conflict, which they will not, because the ids differ. The five-minute warning is per device. Say so in the UI only if we discover it confuses people. Do not block the second phone.
 
-### 2.2 Parsing
+## 3. Merge
 
-Accept, after trimming, a string that matches `^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$`.
+Inputs: local rows (including tombstones), remote snapshot rows, and the parent map. Output: rows to upsert, conflicts to store, ids to drop because `purged_ids` names them and the local rev is one of the purged revs.
 
-- `"350"` → 35000 minor
-- `"350.5"` → 35050 minor
-- `"350.50"` → 35050 minor
-- `"0.10"` → 10 minor
-- `"0"`, `"0.00"`, negative, `"100.555"`, `"1e2"`, `"1,23,456.50"`, `"₹350"`, JSON number, JSON null → reject
+For each entity id present on either side:
 
-Commas and the rupee sign are a client concern. The client strips a valid Indian grouping (`1,23,456.50`) or a standard grouping of thousands (`123,456.50`) and sends `123456.50`. Invalid groupings (`1,2,3`) never leave the form. The API's strict pattern is what the server trusts.
+1. If the remote rev equals the local rev, do nothing.
+2. If the local rev is an ancestor of the remote rev (walk parents), apply the remote row.
+3. If the remote rev is an ancestor of the local rev, keep local. It will be pushed.
+4. If either rev is already recorded as applied (history has that rev), ignore it. Replays are normal.
+5. Otherwise the revs are concurrent. Store a conflict containing both full rows. Do not modify the local entity. Do not push.
 
-Parsing uses a decimal type, then multiplies by 100 and requires an integer result. It does not use binary float.
+Ancestor walk is bounded by the parent map inside the union of local `rev_parent` and the snapshot's `rev_parents`. A rev with no path is concurrent, not "newer." There is no timestamp winner.
 
-### 2.3 Arithmetic
+Tombstone versus a live concurrent edit is step 5, not a special overwrite.
 
-Sums are SQL `sum(amount_minor)` returning `bigint`, coalesced to 0. Net for a set of income and expense totals is `income_minor - expense_minor`, which may be negative. Subtraction of two integers cannot drift.
+Resolution: the user builds the chosen field set. The new rev has both conflicting revs as parents. That row is a normal edit and can be pushed. Both phones, once they have the resolution, see their own rev as an ancestor and fast-forward.
 
-Display percentages, and only display percentages, use a decimal library:
+`purged_ids`: if the local entity's current rev is listed, delete it locally, including history, and do not put it back in the outbox. If the local entity has a newer rev that is not listed, keep it and let the push offer it; the other phone may conflict, which is safer than dropping an edit the compaction did not know about.
 
-```text
-percent_1dp = (Decimal(numerator_minor) / Decimal(denominator_minor) * 100)
-              .quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-```
+## 4. Dates and budgets
 
-If the denominator is 0, the display value is null and the UI shows "—" for a savings rate, or "new" for a month-over-month change when the current numerator is non-zero, or "flat" when both are zero. No `float8` in these queries.
+Unchanged from the rules that still stand.
 
-Category share percentages are each rounded independently. They are not adjusted so the set sums to 100.
+- Today is `LocalDate.now(ZoneId.of(timezone))`.
+- A month is `[first, first of next)`.
+- Upcoming is `transaction_date > today`. It is not a column.
+- Setting this month's budget updates the open row if it already starts this month, or closes the previous open row at this month and inserts a new one.
+- A past month is rejected (`BUDGET_PERIOD_LOCKED`) until the product decision changes.
+- Archive of a category sets the open budget's `effective_to` to the first day of next month.
+- State machine is the integer one in the schema doc. The four names `ok`, `approaching`, `at_limit`, `exceeded` are the ones the PM restated with this direction. The earlier naming question is closed.
 
-### 2.4 Budget state
+## 5. Refunds (Proposed)
 
-```text
-if spent_minor * 100 >= budget_minor * 80:
-    crossed_80 = true
-exceeded   = spent_minor > budget_minor
-at_limit   = spent_minor == budget_minor
-```
+If the Product Owner accepts them:
 
-| Condition | State |
-|---|---|
-| budget missing | `none` |
-| not crossed_80 | `ok` |
-| exceeded | `exceeded` |
-| at_limit | `at_limit` |
-| else | `approaching` |
+- `spent(category, month) = sum(expense.amount_minor) - sum(refund.amount_minor)` for live rows of that category dated in the month.
+- A refund of a category the user did not spend on can make `spent` negative. Show it as negative, do not clamp. Clamping would hide money.
+- Income totals ignore refunds.
+- `net = income - expense + refund`.
+- A refund cannot use an income category.
+- Overall budget `spent` uses the same subtraction across all expense categories.
 
-`at_limit` is the proposed label for exactly 100% (pending TQ-8). The overspend amount is `spent_minor - budget_minor` when exceeded, else 0. Remaining is `budget_minor - spent_minor` and may be negative; the UI shows the negative remaining as overspend together with the exceeded state.
+If the Product Owner rejects them, refunds do not exist and a returned amount is an income row, which the app will then mis-state in the category breakdown. That rejection should be explicit, because the analyst's point is that the income treatment is the bug.
 
-Worked edge: budget 10001 minor (₹100.01), spent 8000 (₹80.00). `8000 * 100 = 800000`, `10001 * 80 = 800080`. Not crossed. Displayed ratio half-up is 80.0. State stays `ok`. This is intentional.
+## 6. Card and EMI guidance (Proposed)
 
-Income rows are excluded from `spent_minor`. Soft-deleted rows are excluded. The month is the calendar month of `transaction_date`.
+Not a validator. On save, if the category is `EMI/Loan`, or the payment method is `card` and the note or category looks like a bill payment (a fixed list of hints: "card bill", "credit card payment", "cc payment"), show a dismissible note:
 
-Warnings are not rows. Create, edit, delete, and restore responses include the states that changed for the affected month, so the UI can show a notice without a second conceptual model.
+> If you already recorded the original purchase or the individual spends, recording the card payment or the full price as well counts the money twice. Transfers between your own accounts are not expenses.
 
-### 2.5 Which budget applies
+Do not block the save. Do not try to detect this with a model.
 
-For a user, a scope (one category, or overall), and a month start `M`:
+## 7. CSV
 
-```text
-select the unique budget where
-  effective_from <= M
-  and (effective_to is null or effective_to > M)
-```
+`domain.csv` writes the BOM, then the header, then rows from a cursor so a large export is not one giant string. Tests open the bytes, assert the first three are `EF BB BF`, and assert a note of `=1+1` round-trips as a formula-inert cell. This is Proposed until the Product Owner confirms the BOM.
 
-The exclusion constraint makes "unique" a database guarantee. Carry-forward is the absence of a later row, not a copied row.
+## 8. Repeat (Proposed)
 
-Setting a budget for the current month `C`:
+The action is a save with a new id and today's date. It does not copy `rev`, `deleted_at`, or `created_at`. The duplicate warning applies, so repeating within five minutes asks first.
 
-- If the open period has `effective_from = C`, update its amount and increment `version`.
-- If the open period starts before `C`, set its `effective_to = C` and insert a new row from `C`.
-- If a past month is requested, return `422 BUDGET_PERIOD_LOCKED` (pending TQ-6).
+## 9. Passphrase unlock
 
-Clearing a budget for the current month:
+- Derive KEK with Argon2id using the salt in the manifest (or a new salt on first create).
+- Unwrap DEK. On failure, show "That passphrase does not open this ledger." Wait `min(30 seconds, 2^(failures-1) seconds)` before accepting another try. Never delete data because of failures. Never stop accepting tries.
+- On success, failures reset, DEK goes to the keystore.
+- First create: generate DEK, generate recovery code, wrap both ways, show the recovery code, require an explicit "I have stored this" before continuing. If they decline, record that the recovery wrap is absent and show "If you forget the passphrase, this ledger cannot be recovered."
 
-- If the open period starts at `C`, delete that row (it never applied to a completed month) and audit the delete.
-- Otherwise set `effective_to = C` on the open period. Earlier months still resolve to it. Later months resolve to nothing.
+## 10. Sync worker
 
-Archiving a category sets `effective_to` to the first day of next month on its open budget, so the current month keeps the budget and the next month does not (AC-CAT-3.3). Unarchive is not in the contract.
+WorkManager, network connected, not expedited. Also a manual action. The worker runs the protocol in `API_SPECIFICATION.md`. It does not hold a wake lock beyond one attempt. If the app is killed after the SQLite commit and before the push, the outbox is still there and the next run pushes it.
 
-The informational warning "category budgets exceed the overall budget" sums the resolved category amounts for the month and compares to the resolved overall amount. It does not block the save (AC-BUD-2.1).
+The worker reads the DEK from the keystore. If the keystore cannot produce it (reboot policy, user locked the device in a way that blocks the key), skip sync. Do not ask for the passphrase from a background task. The next foreground open can ask.
 
-## 3. Dates
+## 11. AI module (undecided)
 
-```text
-today = datetime.now(ZoneInfo(user.timezone)).date()
-month window = [month_start, next_month_start)
-```
+Same safety rules as ADR-005, on the device:
 
-All report filters are `transaction_date >= start AND transaction_date < end`. November 2026 includes 1 Nov and 30 Nov. The 6-month trend is the selected month and the five before it; a month with no rows is `0`, not omitted.
-
-`upcoming` is `transaction_date > today`. It is computed in the response. Future dates more than one year after `today` are rejected. Dates before `2000-01-01` are rejected. Both comparisons use the user's timezone for "today" and the stored calendar date for the transaction.
-
-Changing timezone updates `users.timezone` only.
-
-Audit timestamps and `created_at` are `timestamptz`, written by the database clock (`now()`), and serialised as ISO-8601 UTC.
-
-## 4. Request lifecycle
-
-1. Read or generate the request id (UUID).
-2. Resolve the session cookie to a user, unless the route is public. Reject expired, revoked, idle, or absolute-expired sessions. Proposed limits, pending TQ-3: idle 7 days, absolute 30 days from login. Update `last_seen_at` at most once a minute.
-3. On unsafe methods and on export, compare `X-CSRF-Token` to the double-submit cookie with a constant-time compare.
-4. Open a transaction, `set_config('app.user_id', user_id, true)`.
-5. Call the service.
-6. Commit, or roll back on any exception including a failed audit insert.
-7. Log the template and the status. Do not log the body.
-
-Public routes (signup, login, verify, reset request, health) use a database role that may call the `SECURITY DEFINER` auth functions and may not select from `transactions`.
-
-### 4.1 Idempotency
-
-Required on `POST /transactions`. Header `Idempotency-Key`: 16 to 64 characters, `[A-Za-z0-9_-]`.
-
-Hash is SHA-256 of the canonical JSON of the transaction fields: type, amount string as sent after parse-and-reformat, currency, date, category id, payment method, note. The hash **includes** those fields and **excludes** `confirm_duplicate`, which is not a transaction field. If two requests share a key and differ in the hash, the second gets `409 IDEMPOTENCY_KEY_REUSED` and writes nothing.
-
-States of the key row: `in_progress`, `completed`.
-
-- Insert the key as `in_progress` at the start of the transaction.
-- Unique violation plus `in_progress`: `409 IDEMPOTENCY_IN_PROGRESS`.
-- Unique violation plus `completed` and same hash: return the stored status and body, set `Idempotency-Replayed: true`. Do not write again.
-- On success, store status and body and mark `completed` in the same commit as the transaction.
-- On `409 POSSIBLE_DUPLICATE`, store that response as `completed` for this key. A retry of the same save returns the same 409. **Save anyway is a new user action and must use a new key**, with `confirm_duplicate: true`. Reusing the first key for save-anyway is rejected because the stored outcome is the warning, and a different hash is also a conflict. The client mints the second key when the user chooses Save anyway.
-
-Client rule: mint the key when the user first submits that form, and reuse it for a timeout retry of that same submit. Do not let a generic HTTP client retry library mint a new key, and do not enable automatic POST retry.
-
-Keys older than 24 hours are deleted by maintenance. A retry after that window can create a second row. 24 hours covers double-clicks and flaky mobile networks. It is not a forever dedupe.
-
-### 4.2 Duplicate warning
-
-Separate from idempotency. Inside the same transaction, take `pg_advisory_xact_lock` on a hash of `(user_id, type, amount_minor, category_id, date)` so two parallel saves cannot both miss the warning.
-
-Then look for a non-deleted transaction with the same type, amount, category, and date, `created_at > now() - interval '5 minutes'`. The clock is the database clock.
-
-- If found and `confirm_duplicate` is not true: `409 POSSIBLE_DUPLICATE` with a summary of the existing row. No insert.
-- If found and `confirm_duplicate` is true: insert.
-- Payment method and note are not part of the match (the acceptance criteria do not include them).
-
-The lock makes the check reliable under concurrency. It does not turn the warning into a hard unique constraint. Two chai purchases a minute apart are allowed once the user confirms, and two purchases six minutes apart do not warn.
-
-### 4.3 Optimistic concurrency
-
-`version` starts at 1. A trigger increments it on every successful update of the transaction or the budget row. The client sends the version it read.
-
-```text
-update ... set ..., version = version + 1
-where id = :id and version = :version
-returning *
-```
-
-The trigger's increment and the statement's increment must not both apply. Implementation choice: the application writes the business columns and sets `version = :version + 1` in the `UPDATE`, and the trigger only rejects a statement that does not increase `version` by 1. One of those two mechanisms owns the increment; they must not stack. The LLD requirement is a single increment and a failed match when the caller's version is stale.
-
-If the `UPDATE` returns no row:
-
-- `SELECT` visible to RLS returns nothing → 404.
-- `SELECT` returns a row → 409 `VERSION_CONFLICT` with that row. The client shows it and does not retry blindly.
-
-Delete and restore are updates of `deleted_at` and also require `version`.
-
-## 5. Categories
-
-Seeded in the same transaction that marks the user verified, once, per user. Names and types are exactly the PRD FR-CAT-1 lists, in that order, stored with a `sort_order`.
-
-Uniqueness: `(user_id, type, lower(btrim(name)))`. The API trims before insert. `"Pets"` and `"pets"` and `"Pets "` collide. The same name as an income category does not collide.
-
-Archive sets `archived_at`. Archived categories stay on old transactions and in reports, and are rejected on create or on edit when the category id changes to an archived one. Hard delete is allowed only when no transaction row references the category, including soft-deleted transactions. If budget rows exist and no transactions do, they are removed in the same transaction and audited, then the category is deleted.
-
-Rename updates the category row. History shows the new name because transactions store the category id, not a copied name (AC-CAT-2.3). The rename is an audit event.
-
-## 6. Lists, dashboard, reports, export
-
-List default order: `transaction_date DESC, created_at DESC, id DESC`. Cursor is an opaque encoding of the last tuple for that sort. Invalid cursor → 400. Default limit 50, maximum 100. Stable for a fixed dataset. New inserts appear on the first page; they do not shift a cursor the client already holds, because the cursor is a keyset, not an offset.
-
-Filtered totals are aggregates of the full filter, not of the page, returned beside the page: `count`, `income`, `expense`, `net`, `currency`.
-
-Search is case-insensitive substring on `note` only. `%` and `_` in the user query are escaped. At 10k rows a `user_id` index plus a filter is enough. A trigram index is a later change if a measurement says so, not part of the first migration.
-
-Dashboard for `YYYY-MM` returns income, expense, net, the display rate, category breakdown of expenses (amount and display percent), comparison with the previous month (absolute minor-unit difference, display percent or `new` / `flat`), the six expense totals, and resolved budgets with state. One database transaction, at most four aggregate statements, no per-category round trip.
-
-Year report uses 1 January through 1 January next year on `transaction_date`. Twelve months are always present. Category totals and month totals each sum to the year total in minor units. `year_type=financial_in` is not accepted in MVP.
-
-CSV columns, in order: `date`, `type`, `amount`, `currency`, `category`, `payment_method`, `note`, `created_at`. Amount is the canonical decimal string. `created_at` is UTC with a `Z` suffix. Encoding is UTF-8 without a BOM. A field that starts with `=`, `+`, `-`, `@`, tab, or CR is prefixed with a single quote before quoting. Deleted rows and other users are absent. The filter query is the list query. Streaming response, so a large export does not build one giant string in memory. Same-origin fetch with the CSRF header; the SPA then saves the blob. A top-level navigation from another site does not have the header.
-
-## 7. Audit
-
-| Event | When |
-|---|---|
-| `transaction.created` / `.updated` / `.deleted` / `.restored` | Same commit as the change |
-| `budget.created` / `.updated` / `.closed` | Same commit |
-| `category.created` / `.renamed` / `.archived` / `.deleted` | Same commit. Category coverage is a DEV addition; see the discovery note. |
-
-Row contents: id, user id, actor user id (the same, in v1), entity type, entity id, action, `before` JSON, `after` JSON, source (`manual` or `ai_assistant` or `system` for purge-adjacent category work), request id, `created_at`.
-
-JSON amounts are decimal strings, never numbers. The application role has `INSERT` and `SELECT` on `audit_events`, not `UPDATE` or `DELETE`. A trigger rejects both. The purge function is `SECURITY DEFINER` and deletes audit rows for a transaction it is deleting. Maintenance logs outside the audit table: entity id, action `purged`, no amount, no note.
-
-There is no HTTP route that edits an audit row.
-
-## 8. Auth details
-
-- Email is trimmed and lowercased. Unique on the lowercase value.
-- Signup response is always generic. The existing-account branch still runs a hash so the timing is closer to the new-account branch. If the email is new, store the user unverified and send a verification token (hashed at rest, 24-hour expiry) when mail is enabled.
-- Pending TQ-4: if the deployment is private, the verification function may mark the user verified inside signup and send nothing. The financial routes require `email_verified_at` when the setting `REQUIRE_EMAIL_VERIFICATION` is true.
-- Password reset token: 32 random bytes, stored as SHA-256, 30-minute expiry, single use. Success revokes every session.
-- Session token: 32 random bytes, cookie value, database stores SHA-256 only. Cookie name `et_session`, `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` whenever `APP_ENV` is not `local`.
-- CSRF cookie `et_csrf` is readable by the SPA, regenerated on login, mirrored in `X-CSRF-Token`.
-- Login failures: count rows in `login_attempts` for that email in the last 15 minutes. At 5, reject until the window rolls off. Also cap by source IP at 50 failures per 15 minutes. Store the IP only in this short-lived table, not on the session.
-- Account deletion sets `deletion_requested_at`, revokes sessions, and offers the client a chance to export first by being a separate call the UI makes before this one. The purge command deletes owned rows after 30 days.
-
-Default timezone `Asia/Kolkata`. Default currency `INR`. `ai_enabled` defaults false. Enabling AI without `ai_disclosure_accepted_at` returns `403 AI_DISCLOSURE_REQUIRED`.
-
-## 9. AI module (Phase 5)
-
-Interface:
-
-```text
-propose_draft(message, categories, today, timezone) -> suggestion
-answer(message, tool_executor) -> model_text, tool_calls
-```
-
-`GrokProvider` is the first implementation, using `GROK_API_BASE_URL`, `GROK_API_KEY`, and `GROK_MODEL` from the environment. The model id is chosen when the eval set exists, not in this document. A second provider implements the same interface or it does not ship.
-
-Draft suggestion schema, validated before it is returned to the client: type, amount string or null, date or null, category id or null, payment method or null, note, list of ambiguity codes. The service then runs the same field validators as create, but turns validation failures into `missing_fields` rather than a stored row. A suggestion whose category id is not the caller's is treated as missing, not as a 500.
-
-Multiple distinct expenses in one message: do not call the provider a second time and do not return a partial draft. `422 MULTIPLE_TRANSACTIONS_UNSUPPORTED`. Detection can be a first-pass heuristic (two amounts, or a list pattern) and may also trust a structured "multiple" flag from the model. Either signal is enough to refuse. Pending the PM's confirmation; this matches the PM's stated preference.
-
-Shorthand the parser must accept, because the acceptance tests name them: `2k` → 2000, `1.5L` and `1.5 lakh` → 150000, `350/-` → 350. Display the resolved rupee amount on the draft so the user sees what `L` became. Other multipliers, including `cr`, leave the amount empty.
-
-Query tools, the entire set:
-
-| Tool | Inputs | Output |
-|---|---|---|
-| `period_totals` | date range | income, expense, net, currency, count |
-| `category_breakdown` | date range, type | list of category id, name, amount |
-| `compare_periods` | two date ranges | the two totals and the absolute difference |
-| `budget_status` | month, category id or overall | state, spent, budget, remaining |
-
-Each tool takes the user id from the server context, not from the model. The model cannot pass a different user id and have it honoured. AC-AUTH-4.4 tests that.
-
-Number check: extract numeric tokens from the prose, normalise each the same way as money or as a percent, and require each to appear in the tool payload. On failure, `prose` is null and `prose_verified` is false. The UI renders `structured` regardless.
-
-Daily caps, safety defaults pending PO-Q5: 30 draft requests and 60 queries per user. Over the cap → `429`. Provider timeout (proposed 8 seconds, under the 4 second p95 target as a budget, with the timeout slightly above it so a slow success can still return) → `503` and the manual-form fallback body. No retry against the provider that could double-bill without being counted.
-
-Logs for these routes: latency, token usage, cap decision, outcome code. Not the message, not the amount, not the note.
-
-## 10. Maintenance command
-
-`python -m app.maintenance`, one transaction per user or one batched delete with the definer function:
-
-1. For each transaction with `deleted_at < now() - interval '30 days'`, delete its audit rows and the transaction.
-2. Delete idempotency keys with `created_at < now() - interval '24 hours'`.
-3. Delete login attempts older than 1 day and email tokens that are expired and used.
-4. For users with `deletion_requested_at < now() - interval '30 days'`, delete their rows in dependent tables, then the user.
-5. Emit one log line per step with counts and no financial fields.
-
-The function is `SECURITY DEFINER`, owned by the migration role, which is also the table owner and therefore the only role that bypasses row-level security. The audit trigger allows `DELETE` only when `current_user` is that owner. It does not trust a session variable, because the application role could set one. The API connection string is the application role and cannot call the delete directly.
-
-## 11. Error model
-
-All errors:
-
-```json
-{
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Human-readable, no internal SQL.",
-    "fields": {"amount": "max 2 decimal places"},
-    "request_id": "uuid"
-  }
-}
-```
-
-`fields` is omitted when the error is not about a field. Codes are listed in the API spec. Unhandled exceptions become `500 INTERNAL` with no SQL text, and the request id.
-
-## 12. Frontend rules that keep the server honest
-
-- Amount inputs are strings. The JSON body contains a string. A review check rejects `JSON.stringify` of a number for money fields.
-- The add form generates one idempotency key per submit attempt and a second only for Save anyway.
-- Edit forms send the `version` from the GET. On 409 they replace the form with the server row and ask the user to reapply the change.
-- The draft screen does not call create until Confirm. Confirm sends the edited fields.
-- Query answers render the structured block (amount, period, link) even if prose is present.
-- The service worker, if a manifest is added later, does not cache `/api`.
-
-## 13. Testing hooks
-
-The design is shaped so the risky rules are testable without a browser:
-
-- `domain.money` and `domain.budget` tests for the vectors in section 2.
-- API tests that open two users and swap ids.
-- An API test that runs the create twice with one key and once with the same key and a different amount.
-- An API test that updates with a stale version and asserts the first write is intact.
-- A test that the application role's `DELETE` on `audit_events` fails.
-- A test that `POST /ai/drafts` leaves the transaction count unchanged, including when the body says "delete all transactions."
-- A test that dashboard `net` minor units equal the sum.
-
-Fixtures are synthetic. The 00:30 IST / 19:00 UTC previous-day case is a fixed clock in the calendar test, not a sleep until midnight.
+- No insert function is reachable from the provider client.
+- Confirm builds a normal save.
+- Daily cap stored in SQLite (proposed default 30 drafts, 60 questions) so a loop does not spend the user's money. The cap is local and easy to reset by reinstalling; that is acceptable because it is the user's own key and the user's own bill. Say that.
+- Logs: latency and a success bit. Not the sentence, not the amount.
+
+## 12. Tests that matter before any UI polish
+
+- `0.10 + 0.20` is 30 minor units, displayed `0.30`.
+- `100.555` is rejected.
+- Schema dump contains no `REAL`.
+- Merge: two creates, different ids, both present.
+- Merge: edit and edit from the same parent, conflict, no row change, push function not called.
+- Merge: resolution with two parents fast-forwards the other side.
+- Tombstone excludes the row from the spent sum; restore includes it.
+- Snapshot canonical JSON has sorted keys and string amounts; a test encrypts and decrypts.
+- Manifest fixture has no key named amount, note, or category.
+- Wrong authentication tag does not modify SQLite.
+- CSV starts with the BOM once that proposal is accepted; until then the test is marked pending so we do not pretend the Product Owner agreed.
+
+No test in this phase has been written or run.

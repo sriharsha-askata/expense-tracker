@@ -2,4 +2,4 @@
 
 No GitHub Actions workflows are defined yet.
 
-Phase 3 adds the first workflow: lint, unit and integration tests against PostgreSQL, and a secret scan. That workflow does not exist in this branch, so there is no CI result to report. See `docs/development/DEVELOPMENT_GUIDE.md`.
+No workflow runs on this branch. When implementation starts, CI should run the JVM money and merge tests and a secret scan. It does not need PostgreSQL. The server-shaped workflow described here earlier is withdrawn. See `docs/development/DEVELOPMENT_GUIDE.md`.

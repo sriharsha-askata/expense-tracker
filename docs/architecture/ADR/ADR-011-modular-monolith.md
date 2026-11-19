@@ -1,8 +1,11 @@
 # ADR-011: Modular monolith, and no queue
 
-Status: **Proposed**
+Status: **Superseded**
+Superseded: 2026-11-19 by [ADR-013](ADR-013-local-sqlite.md). "No microservices and no Redis" still holds, because there is no server at all.
 Date: 2026-11-19
 Decider: DEV
+
+The text below is historical.
 
 ## Context
 

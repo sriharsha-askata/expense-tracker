@@ -1,67 +1,65 @@
 # Project Status
 
-Last updated: 2026-11-19 (IST) · Updated by: DEV · Phase: **1–2, discovery and architecture**
+Last updated: 2026-11-19 (IST) · Updated by: DEV · Phase: **1–2, discovery and architecture, revised**
 
-This file is the shared working memory. Update it when a phase, decision, blocker, or next step changes. Do not mark work done unless it is actually done.
+This file is the shared working memory. The first status in this branch described a server. That plan is withdrawn.
 
 ## Snapshot
 
 | Item | State |
 |---|---|
-| Product proposal | Written by PM. Committed unchanged in `docs/product/` and `docs/discussions/PM_PROPOSAL.md`. |
-| DEV review | Written in `docs/discussions/001-mvp-discovery.md`. PM has not replied. |
-| Architecture | Drafted. Every architecture doc is **Status: Proposed**. Not approved. |
-| Application code | None. `frontend/`, `backend/`, and `tests/` are placeholders. |
-| GitHub issues | Not created, on purpose. Backlog is `docs/development/BACKLOG.md`. |
-| CI | Not configured. No workflow has run on this branch. |
+| Product docs (`docs/product/`) | Unchanged, on purpose. They still describe a web server. The PM will revise them. |
+| Product Owner direction | Recorded in the addendum of `docs/discussions/001-mvp-discovery.md`. Local-first Android, SQLite, GitHub sync, no server, no household sharing. |
+| Architecture | Revised and **Proposed**. Server ADRs are marked Superseded. |
+| Application code | None. |
+| GitHub issues | Not created. |
+| CI | No workflow. Nothing has run. |
 | Tests | None exist. None were run. |
-| Docker Compose | Sketch only (`postgres` service). Not executed in this phase. |
-| Production deploy | Not started. Hosting is an open Product Owner question (PO-Q4). |
+| Server runtime | Withdrawn. `docker-compose.yml` removed. It was never executed. |
 
 ## Phase gate
 
-Phase 3 (foundation: auth, migrations, CI) does not start until:
+Do not start implementation until:
 
-1. The Product Owner answers, or explicitly defers, the questions in `docs/discussions/001-mvp-discovery.md`.
-2. The PM responds to the open challenges in that note, especially the five that change scope or the meaning of a number.
-3. The Product Owner approves the proposed architecture, or sends it back with changes.
+1. The Product Owner answers NQ-1 through NQ-6 in the discovery addendum, or explicitly defers each to the recommendation written there.
+2. The PM updates `docs/product/` so the acceptance tests match a local-first app. Implementing the current email-and-server tests would rebuild the rejected design.
+3. The Product Owner accepts this revision of the architecture.
 
-A deferral should be written into `docs/discussions/` so the default in the ADR is the one we build.
+## Decisions in force (proposed mechanisms)
 
-## Decisions proposed by DEV
-
-Owned technically, still Proposed until architecture approval. Detail and rejected alternatives are in `docs/architecture/ADR/`.
-
-- Modular monolith. Vite + React SPA, FastAPI, PostgreSQL 16, SQLAlchemy 2 + Alembic. No Redis, no queue, no microservices.
-- Money: `bigint` minor units + currency code. API uses decimal strings. JSON numbers are rejected.
-- Dates: `date` for the transaction day, IANA timezone on the user (default `Asia/Kolkata`), `timestamptz` for system instants.
-- Auth: Argon2id passwords, server-side sessions, HttpOnly cookies. Not JWT in browser storage. Not a managed identity vendor for v1.
-- Tenancy: `user_id` on every private row, plus Postgres row-level security as a backstop.
-- Writes: idempotency keys on create, optimistic `version` on update, 409 on conflict.
-- Budgets: effective-dated rows, not one mutable amount. 80% and 100% states are computed from integer comparisons.
-- AI (Phase 5, designed only): stateless draft endpoint, confirm through the normal create path, read-only query tools, prose discarded if it contains a number the tool did not return.
+- Kotlin Android app. SQLite is the ledger. Saves do not wait for the network.
+- Integer paise, `YYYY-MM-DD` dates, default timezone `Asia/Kolkata`.
+- One encrypted snapshot per sync to a private repo the user owns. Git does not merge the ciphertext.
+- Passphrase wraps a random data key. Recovery code shown once. No reset. Lost secrets mean lost data.
+- Tombstones for 30 days. Erasure of Git history is a confirmed squash plus a new data key.
+- Budget states: `ok`, `approaching`, `at_limit`, `exceeded`.
+- AI is optional and undecided.
 
 ## Waiting on people
 
-**Product Owner:** PO-Q1 through PO-Q6, plus the technical questions TQ-1 through TQ-6 in the discovery note.
+**Product Owner:** NQ-1 (iOS in v1?), NQ-2 (GitHub account required only for sync?), NQ-3 (no passphrase reset), NQ-4 (squash plus key rotation), NQ-5 (analyst items), NQ-6 (AI stays out of the first build). Also still open from the first review: TQ-5 (the word savings), TQ-6 (past budgets), PO-Q6 (financial year).
 
-**PM:** reply to the challenges in `docs/discussions/001-mvp-discovery.md`. In particular: the word "savings", email as a Phase 3 blocker, budget edits for past months, the exact-100% warning label, audit erasure, and whether the AI accuracy gate can block the ledger.
+**PM:** Revise the PRD, stories, acceptance criteria, and roadmap so they stop requiring a server. Reply on the analyst items if you want a recommendation recorded before the Product Owner does. The word "savings" is still unresolved.
+
+## Analyst items (Proposed, not confirmed)
+
+Refunds reduce the expense category. A non-blocking warning about double-counting card bills and EMIs. CSV UTF-8 BOM. Repeat creates a new entry dated today. No hard lockout.
 
 ## Not done, and not claimed
 
-- PM sign-off that every acceptance criterion is satisfiable. A traceability matrix is in `docs/architecture/AC_TRACEABILITY.md` for that review. Three rows are marked pending on purpose.
-- Restore drill, security review, performance measurement, AI eval set.
-- License choice.
+- No phone build, no GitHub App registration, no encryption prototype, no merge tests.
+- GitHub's rate-limit numbers were checked against GitHub's public docs while revising this design. No request was sent to the GitHub API from this environment.
+- License still unchosen.
 
 ## Next action
 
-Wait for the Product Owner and the PM. Do not open GitHub issues and do not start Phase 3 from this document alone.
+Wait for the Product Owner on NQ-1 through NQ-6 and for the PM's product-doc revision. Do not open implementation issues from the old server backlog.
 
 ## Verification log
 
 | Check | Result |
 |---|---|
-| PM files byte-identical to the copies supplied for this task | Confirmed with `cmp` on 2026-11-19 before commit. |
+| `docs/product/` and `docs/discussions/PM_PROPOSAL.md` | Unchanged in this revision. Confirmed with `git diff` before commit: no changes in those paths. |
 | Application tests | Not run. There is no application. |
-| `docker compose` | Not run. Docker is not installed in this environment, so the file was not validated either. |
-| GitHub issue creation | Not done, by instruction. |
+| Docker | The compose file was removed. Docker was not installed here, and the old file had never been started. |
+| GitHub issue creation | Not done. |

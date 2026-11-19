@@ -1,6 +1,6 @@
 # ADR-010: Idempotency and optimistic concurrency
 
-Status: **Proposed**
+Status: **Proposed** — the local double-save rule is still in force. The HTTP 409 mechanism is **Superseded** by [ADR-014](ADR-014-sync-format.md): two devices editing one entry produce a conflict the user must resolve. Never silently overwrite.
 Date: 2026-11-19
 Decider: DEV
 

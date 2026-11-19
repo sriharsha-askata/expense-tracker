@@ -1,8 +1,10 @@
 # ADR-007: Money representation
 
-Status: **Proposed**
+Status: **Proposed** — still in force after the local-first decision.
 Date: 2026-11-19
 Decider: DEV
+
+Storage is now a SQLite `INTEGER` minor-unit column, not a Postgres `bigint`. The representation is unchanged: paise as integers, currency code beside them, decimal strings at the edges, no binary floats. See [ADR-013](ADR-013-local-sqlite.md).
 
 ## Context
 

@@ -1,8 +1,11 @@
 # ADR-001: Frontend
 
-Status: **Proposed**
+Status: **Superseded**
+Superseded: 2026-11-19 by [ADR-012](ADR-012-mobile-client.md), after the Product Owner chose a native local-first app.
 Date: 2026-11-19
 Decider: DEV
+
+The text below is the rejected web-client decision. Do not build it.
 
 ## Context
 

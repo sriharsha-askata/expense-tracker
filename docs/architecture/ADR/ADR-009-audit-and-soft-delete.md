@@ -1,8 +1,11 @@
 # ADR-009: Audit and soft delete
 
-Status: **Proposed**
+Status: **Superseded**
+Superseded: 2026-11-19 by [ADR-017](ADR-017-tombstones-and-git-history.md). Tombstones still apply; the purge mechanism is no longer a server job.
 Date: 2026-11-19
-Decider: DEV. Whether purge also deletes audit amounts is pending TQ-7. The recommendation below is what the schema specifies.
+Decider: DEV
+
+The text below is historical. The 30-day restore goal remains; the mechanism does not.
 
 ## Context
 

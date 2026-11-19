@@ -1,5 +1,5 @@
 # Tests
 
-Placeholder directory. No test suite exists yet, and nothing here has been run.
+No suite exists and nothing here has been run.
 
-Planned layout (Phase 3 onward) is described in `docs/development/DEVELOPMENT_GUIDE.md`. Fixtures must be synthetic. Do not put real financial records in this tree.
+When implementation starts, money and merge tests should be plain JVM tests under the Android project, not a server suite. Fixtures must be synthetic. Do not put a real ledger, token, or passphrase here.

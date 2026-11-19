@@ -1,8 +1,10 @@
 # ADR-008: Dates and timezones
 
-Status: **Proposed**
+Status: **Proposed** — still in force after the local-first decision.
 Date: 2026-11-19
 Decider: DEV
+
+SQLite has no typed `date`. Store the calendar day as `TEXT` `YYYY-MM-DD`. Store instants as UTC `TEXT` in ISO-8601. The timezone remains an IANA name on the local settings row, default `Asia/Kolkata`. Do not store the transaction day as an instant.
 
 ## Context
 
