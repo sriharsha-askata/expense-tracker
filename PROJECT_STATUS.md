@@ -6,7 +6,7 @@ Last updated: 2026-11-19 (IST) · Updated by: DEV · Phase: **1–2, decisions r
 
 | Item | State |
 |---|---|
-| Product docs (`docs/product/`) | Unchanged, on purpose. They still describe a web server. The PM will revise them. |
+| Product docs (`docs/product/`) | PM v0.2, committed unchanged. They match the local-first app. |
 | Product Owner decisions | Recorded in the addenda of `docs/discussions/001-mvp-discovery.md`. The questions from the last two rounds are answered. |
 | Architecture | Expo / React Native, on-device SQLite, optional GitHub sync. ADRs the Product Owner decided are marked **Accepted**. ADR-014 (one snapshot file) is still **Proposed**. |
 | Application code | None. No Expo project, no workflow file. |
@@ -41,7 +41,7 @@ When he says start:
 
 **Product Owner:** the go-ahead to start Phase 3, and later an Expo account plus an `EXPO_TOKEN` GitHub secret when the first APK is wanted. Not before.
 
-**PM:** revise `docs/product/` so stories and acceptance tests match this app. That should land before feature work, not before the Expo shell.
+**PM:** v0.2 product docs are in. Traceability against those criteria is in `docs/architecture/AC_TRACEABILITY.md` for sign-off.
 
 ## Not done, and not claimed
 
@@ -58,7 +58,7 @@ Wait for the Product Owner to approve starting Phase 3. Do not open implementati
 
 | Check | Result |
 |---|---|
-| `docs/product/` and `docs/discussions/PM_PROPOSAL.md` | Must stay unchanged in this commit. Confirm with `git diff` before committing. |
+| Product docs v0.2 | Byte-compared to the PM's supplied files with `cmp` before commit. |
 | Application tests | Not run. There is no application. |
 | EAS / Expo | Not called. |
 | GitHub issue creation | Not done. |

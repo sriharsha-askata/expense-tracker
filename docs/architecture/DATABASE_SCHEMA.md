@@ -171,7 +171,7 @@ Unchanged arithmetic, now on SQLite integers:
 - otherwise, if the first line is true, `approaching`
 - otherwise `ok`
 
-`spent` for a category is the sum of live expense rows in that month, minus the sum of live refund rows in that month if refunds are accepted. Income is not spent. Tombstones are not spent. The overall budget uses the same rule across categories.
+`spent` for a category is the sum of live expense rows in that month, minus the sum of live refund rows in that month. Income is not spent. Tombstones are not spent. The overall budget uses the same rule across categories.
 
 Display percentages are half-up to one decimal, in application code, from those integers. They are not stored. They do not decide the state. A rounded 80.0 can still be `ok`. Category shares are not nudged to sum to 100.
 
@@ -181,7 +181,7 @@ Canonical JSON. Object keys sorted. No insignificant whitespace. UTF-8. Amounts 
 
 ```json
 {
-  "compacted_through": null,
+  "compaction_generation": 0,
   "conflicts": [],
   "device_id": "uuid-of-writer",
   "format": 1,
@@ -197,7 +197,9 @@ Canonical JSON. Object keys sorted. No insignificant whitespace. UTF-8. Amounts 
 }
 ```
 
-`purged_ids` is the list of entity ids a compaction removed, so a phone that still has them locally does not treat "missing" as "create them again." The list is inside the ciphertext. The next compaction clears it after every device the user still cares about has synced, which we cannot know; clear it on the compaction after the one that introduced it, and accept that a phone offline across two compactions can resurrect a purged row. The compaction screen says that.
+`purged_ids` lists ids removed by the latest compaction only. `compaction_generation` increments on each compaction. A phone one generation behind applies that list. A phone two or more behind must not upload local-only rows and must not delete them; it asks. See the LLD section "Purge, one compaction, and two compactions" for the screen copy. The list stays inside the ciphertext.
+
+Default categories are the FR-CAT-1 lists in v0.2. Income defaults are Salary, Freelance, Interest, Gift, Other. There is no income category named Refund. Refunds are a transaction type. Seed ids stay UUIDv5 so two installs do not fork (AC-CAT-1.2).
 
 `conflicts` in the snapshot are the unresolved ones. A phone that pulls them shows the same choice and does not push a different winner.
 

@@ -95,7 +95,7 @@ Local file, not a GitHub upload.
 - `created_at` is UTC with a `Z` suffix.
 - A field that starts with `=`, `+`, `-`, `@`, tab, or carriage return is prefixed with a single quote, then quoted with RFC 4180 rules.
 - Tombstones are omitted.
-- The sum of `amount` for a type, read back as decimals, equals the on-screen total for that filter. Refunds, if accepted, are their own `type` value `refund` and are not folded into the expense column.
+- The sum of `amount` for a type, read back as decimals, equals the on-screen total for that filter. Refunds are `type` `refund` and are not folded into the expense column.
 
 ## 8. Repeat
 

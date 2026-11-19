@@ -27,7 +27,9 @@ Single SQLite connection, WAL, one transaction at a time. The UI awaits that tra
 
 Revision: `new_rev` is a random UUID. Parent is the row's current `rev`, or none for an insert. `history` stores before/after with amounts as decimal strings.
 
-The duplicate-warning query is inside the same transaction, so two taps cannot both miss it. It does not take a GitHub lock. Two phones can each record a ₹40 chai without a warning; that is a real second purchase unless the user later calls it a conflict, which they will not, because the ids differ. The five-minute warning is per device. Say so in the UI only if we discover it confuses people. Do not block the second phone.
+The duplicate-warning query is inside the same transaction, so two taps cannot both miss it. It looks only at rows created on **this phone** in the last five minutes (same type, amount, category, and calendar date). It does not look at the other phone. Two phones can each log a ₹40 chai inside that window with no warning, and after sync both rows exist (AC-TXN-5.4). They are different ids, so they are not a conflict. Repeat uses the same check (AC-TXN-5.5).
+
+If the edit form was opened against revision R and the row on this phone is no longer R (a sync applied a newer revision while the form was open), Save does not write. It shows the current values and asks (AC-TXN-3.3). The same screen is the two-phone conflict screen.
 
 ## 3. Merge
 
@@ -47,7 +49,28 @@ Tombstone versus a live concurrent edit is step 5, not a special overwrite.
 
 Resolution: the user builds the chosen field set. The new rev has both conflicting revs as parents. That row is a normal edit and can be pushed. Both phones, once they have the resolution, see their own rev as an ancestor and fast-forward.
 
-`purged_ids`: if the local entity's current rev is listed, delete it locally, including history, and do not put it back in the outbox. If the local entity has a newer rev that is not listed, keep it and let the push offer it; the other phone may conflict, which is safer than dropping an edit the compaction did not know about.
+### Purge, one compaction, and two compactions
+
+Each snapshot carries `compaction_generation` (an integer, starting at 0) and `purged_ids` (entity ids removed by the **latest** compaction only). The phone stores the generation it last applied.
+
+**The other phone synced after the previous forget-history** (remote generation is exactly one ahead):
+
+- If this phone's copy of that id is the revision that was purged, or an ancestor of it, delete it locally, including history, and do not put it in the outbox. An unedited copy does not come back (AC-SYNC-4.4, AC-ERS-1.3).
+- If this phone edited it after the revision that was purged, the purge did not know about that edit. Show both: "forgotten on the other phone" and "edited here". Do not push until the user chooses (AC-SYNC-4.4).
+
+**The other phone stayed offline across two forget-history actions** (remote generation is more than one ahead). The latest `purged_ids` list no longer names what the first compaction removed. Absence from the new snapshot is not proof the row was forgotten, and it is not proof it should be uploaded again.
+
+The phone must not push those local-only rows. It lists them: "This phone missed a history reset. These entries are on this phone and not in the backup. Keep them (they go back into the backup) or drop them?" Nothing is uploaded and nothing is deleted until the user answers. That is the resurrection edge case. Silent upload would bring a forgotten entry back. Silent delete would destroy an edit made on the offline phone. The screen exists so neither happens by itself.
+
+**Compaction confirmation copy**, shown before the squash runs, and never skipped:
+
+> This rewrites the backup so only the current ledger remains, and creates a new data key. Other phones will need your passphrase the next time they sync. GitHub may still keep private copies we cannot delete.
+>
+> If another phone has not synced since the last time you forgot old versions, sync it first. Doing this twice while a phone stays offline does not put forgotten entries back by itself: that phone will ask you whether to keep or drop the entries it still has.
+
+Day-to-day 30-day expiry does not increment `compaction_generation`. It only drops the row from the live snapshot. A phone that was offline and still holds an unedited copy of that row drops it on the next sync because the tombstone's age is in the snapshot it pulls (AC-SYNC-4.3). Expiry uses the phone's current calendar date compared with `deleted_at` plus 30 days, on next launch. If `deleted_at` is after that date (the clock moved backwards), the row is kept. A clock set **forward** can expire a row early; there is no trusted clock without a server. The privacy text does not need to dwell on this. The rule is in this section so the test for AC-TXN-4.5 does not invent a network time.
+
+**Delete account on one phone** (AC-ERS-3.4): that phone deletes the repo, drops the token, and wipes its own ledger and keys. Other phones are not wiped remotely. On their next sync the repo is gone. They keep the local ledger, say the backup is gone, and offer CSV export or a new connection. They do not erase themselves.
 
 ## 4. Dates and budgets
 
@@ -56,10 +79,10 @@ Unchanged from the rules that still stand.
 - Today is the calendar day in the user's IANA zone (`Asia/Kolkata` by default), computed with `Intl` or an explicit timezone library, not by slicing a UTC timestamp.
 - A month is `[first, first of next)`.
 - Upcoming is `transaction_date > today`. It is not a column.
-- Setting this month's budget updates the open row if it already starts this month, or closes the previous open row at this month and inserts a new one.
-- A past month is rejected (`BUDGET_PERIOD_LOCKED`). Accepted. Current and future months remain editable.
+- A past month is rejected (`BUDGET_PERIOD_LOCKED`). The current month and any future month are editable (AC-BUD-1.4, AC-BUD-1.5).
+- Setting month M (current or future): leave every period that ends at or before M untouched. Close the period that covers M at M's first day if it started earlier. Remove periods that start on or after M. Insert one open period from M. That period carries forward until a later edit. Setting February while it is December does not change December. It does replace a March period that had already been set, because a change applies to the chosen month and later months (FR-BUD-1).
 - The year report defaults to 1 January through 31 December. The Indian FY preset is 1 April through 31 March, labeled `FY 2026-27` when it starts in April 2026. Both are date windows over the same rows.
-- The dashboard title for income minus spending is **Net**. Spending is expenses minus refunds, so Net = income − expenses + refunds.
+- The dashboard title is **Net**, with the formula visible. Spending, the 6-month trend, and month-over-month category comparison use expenses minus refunds. The AC-DASH-3.1 example has no refunds, so its +₹10,000 still holds. Income is compared on its own.
 - Archive of a category sets the open budget's `effective_to` to the first day of next month.
 - State machine is the integer one in the schema doc: `ok`, `approaching`, `at_limit`, `exceeded`.
 
